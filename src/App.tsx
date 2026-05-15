@@ -128,7 +128,7 @@ export default function App() {
       )}
 
       {/* MAIN WORKSPACE REGION */}
-      <div className="flex-1 w-full h-full relative overflow-hidden flex">
+      <div className="flex-1 w-full relative overflow-hidden flex min-h-0">
          
          {/* LEFT DOCK (Fixed) */}
          {!isFullscreen && (
@@ -161,20 +161,20 @@ export default function App() {
          )}
          
          {/* RESIZABLE PANELS REPLACED WITH STANDARD FLEX */}
-         <div className="flex-1 flex w-full h-full">
+         <div className="flex-1 flex w-full min-h-0">
             
             {/* LEFT CONFIG PANEL */}
             {!isFullscreen && (
-              <div className="w-[300px] shrink-0 bg-[#0a0a0c] relative z-10 flex flex-col items-stretch h-full border-r border-white/10">
-                 <div className="w-full h-full overflow-y-auto no-scrollbar pb-24">
+              <div className="w-[300px] shrink-0 bg-[#0a0a0c] relative z-10 flex flex-col border-r border-white/10">
+                 <div className="flex-1 overflow-y-auto custom-scrollbar pb-24 pointer-events-auto">
                    {renderLeftPanelContent()}
                  </div>
               </div>
             )}
 
             {/* CENTER CANVAS & TIMELINE */}
-            <div className="flex-1 bg-black relative group h-full flex flex-col min-w-0">
-               <div className="flex-1 relative group min-h-0">
+            <div className="flex-1 bg-black relative group flex flex-col min-w-0">
+               <div className="flex-1 relative min-h-0">
                  <Visualizer />
                  
                  {/* Fullscreen UI trigger */}
@@ -187,7 +187,7 @@ export default function App() {
                </div>
                
                {!isFullscreen && (
-                 <div className="h-[150px] shrink-0 bg-[#050505] relative overflow-hidden border-t border-white/10 flex flex-col">
+                 <div className="h-[120px] shrink-0 bg-[#050505] relative overflow-hidden border-t border-white/10 flex flex-col">
                     <div className="flex items-center px-4 h-8 bg-white/5 border-b border-white/5 shrink-0">
                        <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">Performance Timeline</span>
                     </div>
@@ -211,8 +211,8 @@ export default function App() {
 
             {/* RIGHT GLOBAL PANEL */}
             {!isFullscreen && (
-              <div className="w-[340px] shrink-0 bg-[#0a0a0c] z-10 h-full border-l border-white/10">
-                <div className="w-full h-full overflow-y-auto no-scrollbar pb-32">
+              <div className="w-[340px] shrink-0 bg-[#0a0a0c] z-10 flex flex-col border-l border-white/10">
+                <div className="flex-1 overflow-y-auto custom-scrollbar pb-32 pointer-events-auto">
                    <ScenePanel />
                    <div className="h-px w-full bg-white/5" />
                    <ColorPanel />

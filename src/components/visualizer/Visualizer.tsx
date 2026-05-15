@@ -297,60 +297,119 @@ function HologramScene() {
   );
 }
 
+const TRAIL_COUNT = 12;
+
 function DumbarScene() {
-  const { bgColor, baseColor, textInput } = useStore();
+  const { textInput } = useStore();
   const groupRef = useRef<THREE.Group>(null);
-  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+  const bgMatRef = useRef<THREE.MeshBasicMaterial>(null);
   
+  const historyRef = useRef<any[]>(Array(TRAIL_COUNT).fill(null).map(() => ({ x:0, y:0, scaleX:1, scaleY:1, rotZ:0 })));
+  
+  const targetState = useRef({ 
+    bg: new THREE.Color('#020202'), 
+    fg: new THREE.Color('#ffffff'), 
+    out: new THREE.Color('#333333'),
+    outlineWidth: 0.05
+  });
+
   useFrame((state) => {
     if(!groupRef.current) return;
-    const { bass, treble, beat } = audioEngine.current;
+    const { bass, treble, beat, energy, subBass, highMid } = audioEngine.current;
     
-    // Background flashes on beat
-    if (matRef.current) {
-        if (beat > 0.5) {
-            matRef.current.color.set(baseColor);
-        } else {
-            matRef.current.color.set(bgColor).lerp(new THREE.Color(baseColor), bass * 0.2);
-        }
+    // Dynamic theme colors inspired by Google Sans Flex / Studio Dumbar
+    if (energy > 0.7 && beat > 0.4) {
+      targetState.current.bg.set('#00ff3c'); // Intense Green
+      targetState.current.fg.set('#000000'); // Black core
+      targetState.current.out.set('#ffffff'); // White outline glow
+      targetState.current.outlineWidth = 0.15;
+    } else if (bass > 0.5 || subBass > 0.5) {
+      targetState.current.bg.set('#050000'); // Deep dark pulse
+      targetState.current.fg.set('#ffffff');
+      targetState.current.out.set('#ff003c'); // Red slit-scan trail
+      targetState.current.outlineWidth = 0.08 + (bass * 0.1);
+    } else {
+      targetState.current.bg.set('#050505');
+      targetState.current.fg.set('#ffffff');
+      targetState.current.out.set('#222222');
+      targetState.current.outlineWidth = 0.05;
     }
+    
+    if (bgMatRef.current) {
+       bgMatRef.current.color.lerp(targetState.current.bg, 0.15);
+    }
+    
+    const time = state.clock.elapsedTime;
+    
+    const targetScaleX = 1 + (bass * 2.5) + (energy * 1.5) + (beat * 1.0);
+    const targetScaleY = 1 + (highMid * 1.0) - (subBass * 0.2) + (beat * 0.5);
+    
+    // Kinetic wavy motion
+    const waveDistortionX = Math.sin(time * 5.0) * (energy + bass) * 0.6;
+    const waveDistortionY = Math.cos(time * 3.7) * (energy) * 0.4;
+    const rotZ = Math.sin(time * 2.0) * bass * 0.3;
+    
+    const currentFront = {
+      x: waveDistortionX,
+      y: waveDistortionY,
+      scaleX: targetScaleX,
+      scaleY: targetScaleY,
+      rotZ: rotZ
+    };
+    
+    historyRef.current.unshift(currentFront);
+    historyRef.current.pop();
+    
+    groupRef.current.children.forEach((mesh: any, i: number) => {
+      const hist = historyRef.current[i];
+      if (!hist) return;
+      
+      mesh.position.x += (hist.x - mesh.position.x) * 0.4;
+      mesh.position.y += (hist.y - mesh.position.y) * 0.4;
+      mesh.scale.x += (hist.scaleX - mesh.scale.x) * 0.4;
+      mesh.scale.y += (hist.scaleY - mesh.scale.y) * 0.4;
+      mesh.rotation.z += (hist.rotZ - mesh.rotation.z) * 0.4;
+      
+      mesh.position.z = -i * 0.2; 
+      
+      if (!mesh.color) mesh.color = new THREE.Color();
+      if (!mesh.outlineColor) mesh.outlineColor = new THREE.Color();
 
-    groupRef.current.scale.x = 1 + (bass * 2.5) + (beat * 2.0);
-    groupRef.current.scale.y = 0.8 + (treble * 0.5) + (beat * 1.0);
+      if (i === 0) {
+        mesh.color.lerp(targetState.current.fg, 0.2);
+        mesh.outlineWidth = 0;
+      } else {
+        mesh.color.lerp(targetState.current.bg, 0.2);
+        mesh.outlineColor.lerp(targetState.current.out, 0.2);
+        mesh.outlineWidth = targetState.current.outlineWidth;
+        mesh.fillOpacity = 1.0;
+      }
 
-    groupRef.current.children.forEach((child, i) => {
-      const dir = i % 2 === 0 ? 1 : -1;
-      child.position.x += dir * (0.02 + bass * 0.1 + beat * 0.5);
-      if(child.position.x > 15) child.position.x = -15;
-      if(child.position.x < -15) child.position.x = 15;
+      if (mesh.sync) mesh.sync();
     });
   });
 
-  const lines = new Array(7).fill(0);
-  const displayText = (textInput || "KINETIC").toUpperCase();
-  const repeatingText = `${displayText} \u2014 ${displayText} \u2014 ${displayText} \u2014 ${displayText}`;
+  const displayText = (textInput || "YOU").toUpperCase();
 
   return (
     <group>
       <mesh position={[0,0,-20]}>
         <planeGeometry args={[100, 100]} />
-        <meshBasicMaterial ref={matRef} color={bgColor} />
+        <meshBasicMaterial ref={bgMatRef} color="#000" />
       </mesh>
-      <group ref={groupRef} position={[0, 0, -5]}>
-        {lines.map((_, i) => (
-          <Text
-            key={i}
-            position={[0, (i - 3) * 2.5, 0]}
-            fontSize={2.5}
-            font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfMZhrib2Bg-4.ttf"
-            letterSpacing={-0.05}
-            anchorX="center"
-            anchorY="middle"
-            whiteSpace="overflowWrap"
-            color={baseColor}
-          >
-            {repeatingText}
-          </Text>
+      
+      <group ref={groupRef} position={[0, 0, 0]}>
+        {new Array(TRAIL_COUNT).fill(0).map((_, i) => (
+           <Text
+             key={i}
+             font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfMZhrib2Bg-4.ttf"
+             fontSize={5}
+             letterSpacing={-0.1}
+             anchorX="center"
+             anchorY="middle"
+           >
+             {displayText}
+           </Text>
         ))}
       </group>
     </group>
@@ -431,19 +490,24 @@ function VisualText() {
 function PostProcessing() {
   const { bloomIntensity, rgbSplitAmount, glitchActive } = useStore();
   const [dynamicBloom, setDynamicBloom] = useState(bloomIntensity);
+  const [dynamicSplit, setDynamicSplit] = useState(rgbSplitAmount);
 
   useFrame(() => {
-    const { energy, beat } = audioEngine.current;
+    const { energy, beat, bass } = audioEngine.current;
     
     // Dynamic bloom
     const targetBloom = bloomIntensity + (energy * 0.5) + (beat * 2.0);
     setDynamicBloom(prev => prev + (targetBloom - prev) * 0.1); 
+
+    // Dynamic Chromatic Aberration
+    const targetSplit = rgbSplitAmount + (bass * 0.015) + (beat * 0.03);
+    setDynamicSplit(prev => prev + (targetSplit - prev) * 0.2);
   });
 
   return (
-    <EffectComposer multisampling={4}>
+    <EffectComposer multisampling={0}>
       <Bloom 
-        luminanceThreshold={0.1} 
+        luminanceThreshold={0.2} 
         luminanceSmoothing={0.9} 
         intensity={dynamicBloom} 
         mipmapBlur
@@ -452,12 +516,12 @@ function PostProcessing() {
         <Glitch 
           delay={new THREE.Vector2(0.5, 1.5)} 
           duration={new THREE.Vector2(0.1, 0.3)} 
-          strength={new THREE.Vector2(0.1, 0.5)} 
+          strength={new THREE.Vector2(0.3, 1.0)} 
           mode={GlitchMode.SPORADIC}
           ratio={0.85}
         />
       )}
-      <ChromaticAberration offset={new THREE.Vector2(rgbSplitAmount, rgbSplitAmount)} />
+      <ChromaticAberration offset={new THREE.Vector2(dynamicSplit, dynamicSplit)} />
       <Vignette eskil={false} offset={0.1} darkness={1.1} />
     </EffectComposer>
   );

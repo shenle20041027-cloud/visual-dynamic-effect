@@ -28,7 +28,9 @@ function useWebcamTexture() {
     navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
       .then((stream) => {
         video.srcObject = stream;
-        video.play();
+        video.play().catch((e) => {
+          if (e.name !== 'AbortError') console.warn('Error playing video', e);
+        });
       }).catch(err => console.log('Camera access denied or unavailable', err));
     return () => {
       const stream = video.srcObject as MediaStream;
@@ -138,55 +140,95 @@ const liquidFragment = `
   uniform float uTime;
   uniform float uBass;
   uniform float uLowMid;
-  uniform vec3 uColor;
+  uniform float uEnergy;
   varying vec2 vUv;
   
-  float hash(vec2 p) { return fract(1e4 * sin(17.0 * p.x + p.y * 0.1) * (0.1 + abs(sin(p.y * 13.0 + p.x)))); }
-  float noise(vec2 x) {
-    vec2 i = floor(x); vec2 f = fract(x);
-    float a = hash(i); float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0));
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+  float smin(float a, float b, float k) {
+    float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
+    return mix( b, a, h ) - k*h*(1.0-h);
+  }
+  
+  float sdCircle(vec2 p, float r) { return length(p) - r; }
+  
+  float sdBox(vec2 p, vec2 b) {
+    vec2 d = abs(p)-b;
+    return length(max(d,0.0)) + min(max(d.x,d.y),0.0);
   }
   
   mat2 rot(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
 
   void main() {
-    vec2 uv = vUv * 2.0 - 1.0;
-    uv.x *= 1.5;
+    vec2 p = vUv * 2.0 - 1.0;
+    p.x *= 1.5; // aspect ratio approximation
     
-    vec2 p = uv;
-    p *= rot(uTime * 0.1);
+    // Add subtle wave distortion from audio
+    p += vec2(sin(p.y * 3.0 + uTime), cos(p.x * 2.0 + uTime)) * (0.02 + uEnergy * 0.05);
+
+    float d = 100.0;
     
-    float n1 = noise(p * 2.0 + uTime * 0.5 + uBass) * 0.5;
-    float n2 = noise(p * 4.0 - uTime * 0.2 + uLowMid) * 0.25;
-    float n3 = noise(p * 8.0 + uTime * 0.8) * 0.125;
-    float fbm = n1 + n2 + n3;
+    // Blob 1: Center pulsing
+    d = smin(d, sdCircle(p - vec2(0.0, 0.0), 0.3 + uBass * 0.1), 0.2);
     
-    float circle = length(uv) - (0.5 + uBass * 0.2 + fbm * 0.3);
-    float glow = 0.05 / abs(circle);
+    // Blob 2: Orbiting fast
+    vec2 pos2 = vec2(sin(uTime * 1.5), cos(uTime * 1.5)) * 0.5;
+    d = smin(d, sdCircle(p - pos2, 0.15 + uLowMid * 0.1), 0.2);
     
-    vec3 col = uColor * glow * (1.0 + fbm);
+    // Blob 3: Figure 8
+    vec2 pos3 = vec2(sin(uTime * 0.8) * 0.8, sin(uTime * 1.6) * 0.4);
+    d = smin(d, sdBox(p - pos3, vec2(0.2)), 0.3);
+    
+    // Blob 4: Random drift
+    vec2 pos4 = vec2(cos(uTime * 0.5) * 0.6, sin(uTime * 0.7) * 0.6);
+    d = smin(d, sdCircle(p - pos4, 0.2), 0.2);
+
+    // Inner Cutout / Negative Space (creates hollow organic shapes like letters)
+    float d_hole = sdCircle(p - vec2(sin(uTime), cos(uTime*1.2)) * 0.2, 0.15 + uEnergy*0.1);
+    d = max(d, -d_hole); // subtract hole
+
+    // Rendering
+    // Background: Mauvey Pink #A8828C
+    vec3 bgCol = vec3(0.66, 0.51, 0.55);
+    
+    // Colors for the shapes
+    vec3 innerCol = vec3(0.0, 0.0, 0.0); // Inside is Black
+    
+    // Stroke / Outlines
+    // We want a bright yellow/green core outline, and a purple outer outline
+    float outlineWidth = 0.02 + uEnergy * 0.01;
+    
+    // Create the contour logic
+    float fill = smoothstep(0.0, -0.01, d);             // 1 if inside, 0 if outside
+    float strokeCore = smoothstep(0.01, -0.01, abs(d) - outlineWidth*0.5); // 1 on the exact boundary
+    float strokeOuter = smoothstep(0.04, -0.01, abs(d) - outlineWidth); // slightly wider outer glow
+    
+    vec3 neonYellow = vec3(0.8, 1.0, 0.0);
+    vec3 neonPurple = vec3(0.4, 0.0, 1.0);
+    
+    vec3 col = mix(bgCol, innerCol, fill);
+    
+    // Add strokes
+    col = mix(col, neonPurple, strokeOuter * 0.8);
+    col = mix(col, neonYellow, strokeCore);
+    
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 function LiquidScene() {
-  const { baseColor, speed } = useStore();
+  const { speed } = useStore();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   
   useFrame((state) => {
     if(!materialRef.current) return;
-    const { bass, lowMid } = audioEngine.current;
+    const { bass, lowMid, energy } = audioEngine.current;
     materialRef.current.uniforms.uTime.value = state.clock.elapsedTime * speed;
     materialRef.current.uniforms.uBass.value = bass;
     materialRef.current.uniforms.uLowMid.value = lowMid;
-    materialRef.current.uniforms.uColor.value.set(baseColor);
+    materialRef.current.uniforms.uEnergy.value = energy;
   });
 
   return (
-    <mesh position={[0,0,-2]} scale={[20, 10, 1]}>
+    <mesh position={[0,0,-2]} scale={[40, 20, 1]}>
       <planeGeometry args={[1, 1]} />
       <shaderMaterial 
         ref={materialRef}
@@ -196,11 +238,9 @@ function LiquidScene() {
           uTime: { value: 0 },
           uBass: { value: 0 },
           uLowMid: { value: 0 },
-          uColor: { value: new THREE.Color() }
+          uEnergy: { value: 0 }
         }}
-        transparent
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
       />
     </mesh>
   );

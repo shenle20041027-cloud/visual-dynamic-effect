@@ -31,6 +31,18 @@ export const t = {
     ON: "ON",
     OFF: "OFF",
 
+    VISUAL_TEMPLATES: "VISUAL TEMPLATES",
+    PRESET_DUMBAR: "Studio Dumbar",
+    PRESET_DUMBAR_DESC: "High-contrast kinetic typography",
+    PRESET_LIQUID: "Liquid Dream",
+    PRESET_LIQUID_DESC: "Organic merging SDF fluid",
+    PRESET_CYBER: "Cyberpunk",
+    PRESET_CYBER_DESC: "Neon blue, high glitch",
+    PRESET_VOID: "Dark Space",
+    PRESET_VOID_DESC: "Monochrome void",
+    PRESET_PULSE: "Neon Pulse",
+    PRESET_PULSE_DESC: "Aggressive pink bass",
+
     // Scene Panel
     SCENE_TIMELINE: "SCENE TIMELINE",
     SCENES: {
@@ -94,6 +106,18 @@ export const t = {
     DIGITAL_GLITCH: "数字故障",
     ON: "开启",
     OFF: "关闭",
+
+    VISUAL_TEMPLATES: "视觉模板",
+    PRESET_DUMBAR: "Studio Dumbar 极简动效",
+    PRESET_DUMBAR_DESC: "高对比度动态排版艺术",
+    PRESET_LIQUID: "流体梦境 (Liquid Dream)",
+    PRESET_LIQUID_DESC: "有机融合SDF流体图形",
+    PRESET_CYBER: "赛博朋克 (Cyberpunk)",
+    PRESET_CYBER_DESC: "霓虹网格与极限故障",
+    PRESET_VOID: "暗黑深空 (Dark Space)",
+    PRESET_VOID_DESC: "单色虚空与纯粹粒子",
+    PRESET_PULSE: "霓虹脉冲 (Neon Pulse)",
+    PRESET_PULSE_DESC: "激进发光的贝斯律动",
 
     // Scene Panel
     SCENE_TIMELINE: "场景时间轴",

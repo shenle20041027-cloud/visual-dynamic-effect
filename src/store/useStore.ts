@@ -38,7 +38,10 @@ interface VisualizerState {
   textGlow: number;
   textSpeed: number;
   textReactive: number;
-  setTextEngine: (key: 'textInput' | 'textAnimStyle' | 'textGlow' | 'textSpeed' | 'textReactive', value: string | number) => void;
+  textFontSize: number;
+  textFontWeight: number;
+  textLetterSpacing: number;
+  setTextEngine: (key: 'textInput' | 'textAnimStyle' | 'textGlow' | 'textSpeed' | 'textReactive' | 'textFontSize' | 'textFontWeight' | 'textLetterSpacing', value: string | number) => void;
 
   // Enhancements
   baseColor: string;
@@ -106,6 +109,9 @@ export const useStore = create<VisualizerState>((set) => ({
   textGlow: 1.0,
   textSpeed: 1.0,
   textReactive: 1.0,
+  textFontSize: 5.0,
+  textFontWeight: 900,
+  textLetterSpacing: -0.1,
   setTextEngine: (key, value) => set({ [key]: value }),
 
   baseColor: '#00f3ff',

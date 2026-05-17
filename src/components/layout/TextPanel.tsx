@@ -22,7 +22,7 @@ const TextSlider = ({ label, value, onChange, min = 0, max = 2, step = 0.01 }: a
 );
 
 export function TextPanel() {
-  const { language, textInput, textAnimStyle, textGlow, textSpeed, textReactive, setTextEngine, applyPreset } = useStore();
+  const { language, textInput, textAnimStyle, textGlow, textSpeed, textReactive, textFontSize, textFontWeight, textLetterSpacing, setTextEngine, applyPreset } = useStore();
   const i18n = t[language];
   const [localText, setLocalText] = useState(textInput);
 
@@ -123,6 +123,40 @@ export function TextPanel() {
         </div>
 
         <div className="pt-2">
+          <TextSlider 
+            label={i18n.FONT_SIZE || 'Font Size'}
+            value={textFontSize}
+            onChange={(v: number) => setTextEngine('textFontSize', v)}
+            min={1}
+            max={12}
+            step={0.1}
+          />
+          <div className="flex flex-col gap-2 mb-4">
+            <div className="flex justify-between text-[10px] uppercase font-bold text-white/40 tracking-widest">
+              <span>{i18n.FONT_WEIGHT || 'Font Weight'}</span>
+              <span className="text-white bg-white/5 px-2 py-0.5 rounded border border-white/5">{textFontWeight}</span>
+            </div>
+            <select
+              value={textFontWeight}
+              onChange={(e) => setTextEngine('textFontWeight', Number(e.target.value))}
+              className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-[13px] font-mono text-white outline-none focus:border-purple-500/50 focus:bg-white/5 transition-all cursor-pointer"
+            >
+              <option value={400}>400</option>
+              <option value={500}>500</option>
+              <option value={600}>600</option>
+              <option value={700}>700</option>
+              <option value={800}>800</option>
+              <option value={900}>900</option>
+            </select>
+          </div>
+          <TextSlider 
+            label={i18n.LETTER_SPACING || 'Letter Spacing'}
+            value={textLetterSpacing}
+            onChange={(v: number) => setTextEngine('textLetterSpacing', v)}
+            min={-0.5}
+            max={0.5}
+            step={0.01}
+          />
           <TextSlider 
             label={i18n.GLOW_AMOUNT || "Glow Intensity"} 
             value={textGlow} 

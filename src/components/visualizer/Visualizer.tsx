@@ -75,7 +75,31 @@ const voidFragment = `
   }
 `;
 
-function useTextTexture(text: string) {
+function drawTextWithLetterSpacing(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, letterSpacing: number) {
+  if (letterSpacing === 0) {
+    ctx.fillText(text, x, y);
+    return;
+  }
+
+  const previousAlign = ctx.textAlign;
+  ctx.textAlign = 'left';
+
+  const characters = Array.from(text);
+  let totalWidth = -letterSpacing;
+  for (const char of characters) {
+    totalWidth += ctx.measureText(char).width + letterSpacing;
+  }
+
+  let currentX = x - totalWidth / 2;
+  for (const char of characters) {
+    ctx.fillText(char, currentX, y);
+    currentX += ctx.measureText(char).width + letterSpacing;
+  }
+
+  ctx.textAlign = previousAlign;
+}
+
+function useTextTexture(text: string, fontSize: number, letterSpacing: number, fontWeight: number) {
   const canvas = useMemo(() => document.createElement('canvas'), []);
   const texture = useMemo(() => new THREE.CanvasTexture(canvas), [canvas]);
 
@@ -93,35 +117,33 @@ function useTextTexture(text: string) {
     // Draw the "action" style long horizontal streak trails
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.font = 'italic 900 280px Inter, system-ui, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.font = `italic ${fontWeight} ${Math.round(fontSize * 56)}px Inter, system-ui, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
     // Draw multiple strokes spreading outwards
     const trailCount = 30;
     for (let i = 0; i < trailCount; i++) {
-      const offsetX = Math.pow(i, 1.4) * 8.0; // Exponential spread
+      const offsetX = Math.pow(i, 1.4) * 8.0;
       ctx.globalAlpha = Math.max(0.0, 1.0 - (i / trailCount));
-      // Left trail
-      ctx.strokeText(text, 512 - offsetX, 280);
-      // Right trail
-      ctx.strokeText(text, 512 + offsetX, 280);
+      drawTextWithLetterSpacing(ctx, text, 512 - offsetX, 280, letterSpacing);
+      drawTextWithLetterSpacing(ctx, text, 512 + offsetX, 280, letterSpacing);
     }
     ctx.globalAlpha = 1.0;
 
     // Draw the core glitchy fill text
     ctx.fillStyle = 'white';
-    ctx.font = 'italic 900 320px Inter, system-ui, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
-    ctx.fillText(text, 512, 280);
+    ctx.font = `italic ${fontWeight} ${Math.round(fontSize * 64)}px Inter, system-ui, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif`;
+    drawTextWithLetterSpacing(ctx, text, 512, 280, letterSpacing);
 
     // Apply minor smearing horizontally on the basic form to bake in some motion blur
     ctx.globalAlpha = 0.3;
-    ctx.fillText(text, 512 - 20, 280);
-    ctx.fillText(text, 512 + 20, 280);
+    drawTextWithLetterSpacing(ctx, text, 512 - 20, 280, letterSpacing);
+    drawTextWithLetterSpacing(ctx, text, 512 + 20, 280, letterSpacing);
     ctx.globalAlpha = 1.0;
 
     texture.needsUpdate = true;
-  }, [text, canvas, texture]);
+  }, [text, fontSize, letterSpacing, fontWeight, canvas, texture]);
 
   return texture;
 }
@@ -422,11 +444,11 @@ function LiquidScene() {
 
 // 3. CYBER GRID (Perspective lines and glitching geometry)
 function CyberScene() {
-  const { speed, baseColor, textInput } = useStore();
+  const { speed, baseColor, textInput, textFontSize, textLetterSpacing, textFontWeight } = useStore();
   const matRef = useRef<THREE.ShaderMaterial>(null);
   
   // Use user text or default to "YOU"
-  const textTexture = useTextTexture(textInput || "YOU");
+  const textTexture = useTextTexture(textInput || "YOU", textFontSize, textLetterSpacing, textFontWeight);
   
   useFrame((state) => {
     if(!matRef.current) return;
@@ -667,8 +689,8 @@ function DumbarScene() {
            <Text
              key={i}
              font="https://fonts.gstatic.com/ea/notosanssc/v1/NotoSansSC-Bold.otf"
-             fontSize={5}
-             letterSpacing={-0.1}
+             fontSize={textFontSize}
+             letterSpacing={textLetterSpacing}
              anchorX="center"
              anchorY="middle"
            >
@@ -693,9 +715,33 @@ function SceneRouter() {
   }
 }
 
-function useCleanTextTexture(text: string, isDumbar: boolean = false) {
+function useCleanTextTexture(text: string, isDumbar: boolean = false, fontSize: number = 5, letterSpacing: number = -0.1, fontWeight: number = 900) {
   const canvas = useMemo(() => document.createElement('canvas'), []);
   const texture = useMemo(() => new THREE.CanvasTexture(canvas), [canvas]);
+
+  const drawTextWithLetterSpacing = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, letterSpacing: number) => {
+    if (letterSpacing === 0) {
+      ctx.fillText(text, x, y);
+      return;
+    }
+
+    const previousAlign = ctx.textAlign;
+    ctx.textAlign = 'left';
+
+    const characters = Array.from(text);
+    let totalWidth = -letterSpacing;
+    for (const char of characters) {
+      totalWidth += ctx.measureText(char).width + letterSpacing;
+    }
+
+    let currentX = x - totalWidth / 2;
+    for (const char of characters) {
+      ctx.fillText(char, currentX, y);
+      currentX += ctx.measureText(char).width + letterSpacing;
+    }
+
+    ctx.textAlign = previousAlign;
+  };
 
   useEffect(() => {
     // High res for crisp text
@@ -705,28 +751,20 @@ function useCleanTextTexture(text: string, isDumbar: boolean = false) {
     if (!ctx) return;
     ctx.clearRect(0, 0, 2048, 1024);
 
+    ctx.fillStyle = 'rgba(255,255,255,1.0)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${fontWeight} ${Math.round(fontSize * 96)}px Inter, system-ui, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif`;
+
     if (isDumbar) {
-      // Dumbar style: transparent background, crisp black or white text depending on inversion later
-      // But let's just draw stark white text on transparent, we can tint via meshBasicMaterial
-      ctx.fillStyle = 'rgba(255,255,255,1.0)';
-      ctx.font = '900 480px Inter, system-ui, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      // Slight letter spacing simulation by inserting thin spaces? No, native letter-spacing is hard.
-      // We'll just rely on standard kerning.
-      ctx.fillText(text, 1024, 512);
+      // Dumbar style: transparent background, crisp white text on transparent.
+      drawTextWithLetterSpacing(ctx, text, 1024, 512, letterSpacing);
     } else {
-      ctx.fillStyle = 'rgba(255,255,255,1.0)';
-      ctx.font = '900 360px Inter, system-ui, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      
-      // Draw text
-      ctx.fillText(text, 1024, 512);
+      drawTextWithLetterSpacing(ctx, text, 1024, 512, letterSpacing);
     }
 
     texture.needsUpdate = true;
-  }, [text, canvas, texture, isDumbar]);
+  }, [text, canvas, texture, isDumbar, fontSize, letterSpacing, fontWeight]);
 
   return texture;
 }
@@ -734,10 +772,10 @@ function useCleanTextTexture(text: string, isDumbar: boolean = false) {
 // === CINEMATIC TYPOGRAPHY ===
 function VisualText() {
   const textRef = useRef<THREE.Mesh>(null);
-  const { currentScene, textInput, textAnimStyle, textGlow, textSpeed, textReactive, baseColor } = useStore();
+  const { currentScene, textInput, textAnimStyle, textGlow, textSpeed, textReactive, baseColor, textFontSize, textLetterSpacing, textFontWeight } = useStore();
 
   const displayText = (textInput || " ").toUpperCase();
-  const tex = useCleanTextTexture(displayText, false);
+  const tex = useCleanTextTexture(displayText, false, textFontSize, textLetterSpacing, textFontWeight);
 
   useFrame((state) => {
     if(!textRef.current) return;

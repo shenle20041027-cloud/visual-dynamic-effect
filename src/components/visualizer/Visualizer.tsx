@@ -1943,7 +1943,7 @@ function VisualText({ sceneOverride }: { sceneOverride?: string }) {
 }
 
 // === HIGH-END POST PROCESSING ===
-function PostProcessing() {
+function PostProcessing({ reduced = false }: { reduced?: boolean }) {
   const { audioDriveMode, audioFxReactive, autoVjEnabled, bloomIntensity, rgbSplitAmount, distortion, glitchActive, currentScene } = useStore();
   const [dynamicBloom, setDynamicBloom] = useState(bloomIntensity);
   const [dynamicSplit, setDynamicSplit] = useState(rgbSplitAmount);
@@ -1954,7 +1954,7 @@ function PostProcessing() {
 
   useFrame((state) => {
     const now = state.clock.elapsedTime;
-    if (now - lastUpdateRef.current < 1 / 30) return;
+    if (now - lastUpdateRef.current < 1 / (reduced ? 18 : 30)) return;
     lastUpdateRef.current = now;
 
     const { energy, beat, bass, subBass, mid, treble, highMid, spectralFlux, transient, spectralCentroid, dynamicRange } = getAudioDriveSnapshot(audioDriveMode);
@@ -1967,10 +1967,10 @@ function PostProcessing() {
     const targetGlitch = !isReferencePastel && (glitchActive || (morph > 0 && (beat > 0.65 || treble > 0.58 || bass > 0.72 || transient > 0.68 || spectralFlux > 0.64)));
 
     const next = {
-      bloom: dynamicRef.current.bloom + (targetBloom - dynamicRef.current.bloom) * 0.1,
-      split: dynamicRef.current.split + (targetSplit - dynamicRef.current.split) * 0.2,
-      distortion: dynamicRef.current.distortion + (targetDistortion - dynamicRef.current.distortion) * 0.16,
-      glitch: targetGlitch,
+      bloom: dynamicRef.current.bloom + (targetBloom - dynamicRef.current.bloom) * (reduced ? 0.16 : 0.1),
+      split: dynamicRef.current.split + (targetSplit - dynamicRef.current.split) * (reduced ? 0.28 : 0.2),
+      distortion: dynamicRef.current.distortion + (targetDistortion - dynamicRef.current.distortion) * (reduced ? 0.2 : 0.16),
+      glitch: reduced ? false : targetGlitch,
     };
 
     setDynamicBloom(next.bloom);
@@ -1982,7 +1982,7 @@ function PostProcessing() {
 
   return (
     <EffectComposer multisampling={0}>
-      {currentScene !== 'Void' && (
+      {currentScene !== 'Void' && !reduced && (
         <Bloom 
           luminanceThreshold={0.2} 
           luminanceSmoothing={0.9} 
@@ -1999,8 +1999,8 @@ function PostProcessing() {
           ratio={0.85}
         />
       )}
-      <ChromaticAberration offset={new THREE.Vector2(dynamicSplit, dynamicSplit)} />
-      {currentScene !== 'Void' && <Vignette eskil={false} offset={0.1} darkness={1.1} />}
+      <ChromaticAberration offset={new THREE.Vector2(reduced ? dynamicSplit * 0.75 : dynamicSplit, reduced ? dynamicSplit * 0.75 : dynamicSplit)} />
+      {currentScene !== 'Void' && !reduced && <Vignette eskil={false} offset={0.1} darkness={1.1} />}
     </EffectComposer>
   );
 }
@@ -2140,8 +2140,8 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
         className="screen-canvas !absolute !inset-0 !h-full !w-full"
         style={{ width: '100%', height: '100%' }}
         camera={{ position: [0, 0, 5], fov: 60 }}
-        dpr={[1, 2]}
-        gl={{ antialias: true, alpha: false }}
+        dpr={isScreenOutput ? [0.75, 1] : [1, 2]}
+        gl={{ antialias: !isScreenOutput, alpha: false, powerPreference: 'high-performance' }}
       >
         <color attach="background" args={[bgColor]} />
         <AudioMorphTone />
@@ -2149,7 +2149,7 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
         <SceneRouter sceneOverride={sceneOverride} />
         <AudioMutationOverlay />
         <VisualText sceneOverride={sceneOverride} />
-        <PostProcessing />
+        <PostProcessing reduced={isScreenOutput} />
       </Canvas>
       {isScreenOutput && !activeScreen?.enabled && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 text-[11px] font-bold uppercase tracking-[0.35em] text-white/50">

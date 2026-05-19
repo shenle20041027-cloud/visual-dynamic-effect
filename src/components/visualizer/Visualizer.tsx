@@ -4,6 +4,7 @@ import { EffectComposer, Bloom, Glitch, ChromaticAberration, Vignette } from '@r
 import { GlitchMode } from 'postprocessing';
 import * as THREE from 'three';
 import { getAudioDriveSnapshot } from '@/lib/audioDrive';
+import { getOutputModeLabel, getTransitionLabel, screenText } from '@/lib/screenText';
 import { useStore } from '@/store/useStore';
 
 function getReactiveAudio() {
@@ -1144,9 +1145,10 @@ function RandomGlassBlocksScene() {
 }
 
 // === ROUTER ===
-function SceneRouter() {
+function SceneRouter({ sceneOverride }: { sceneOverride?: string }) {
   const { currentScene } = useStore();
-  switch(currentScene) {
+  const scene = sceneOverride || currentScene;
+  switch(scene) {
     case 'Cyber': return <CyberScene />;
     case 'Topology': return <TopologyScene />;
     case 'Liquid': return <LiquidScene />;
@@ -1212,9 +1214,10 @@ function useCleanTextTexture(text: string, isDumbar: boolean = false, fontSize: 
 }
 
 // === CINEMATIC TYPOGRAPHY ===
-function VisualText() {
+function VisualText({ sceneOverride }: { sceneOverride?: string }) {
   const textRef = useRef<THREE.Mesh>(null);
   const { currentScene, textInput, textAnimStyle, textGlow, textSpeed, textReactive, textColor, textFontSize, textLetterSpacing, textFontWeight } = useStore();
+  const scene = sceneOverride || currentScene;
 
   const displayText = (textInput || " ").toUpperCase();
   const tex = useCleanTextTexture(displayText, false, textFontSize, textLetterSpacing, textFontWeight);
@@ -1261,7 +1264,7 @@ function VisualText() {
     }
   });
 
-  if(!textInput || textInput === " " || currentScene === 'Dumbar' || currentScene === 'Topology') return null;
+  if(!textInput || textInput === " " || scene === 'Dumbar' || scene === 'Topology') return null;
 
   return (
     <mesh ref={textRef} position={[0, 0, 1]}>
@@ -1284,21 +1287,34 @@ function PostProcessing() {
   const [dynamicSplit, setDynamicSplit] = useState(rgbSplitAmount);
   const [dynamicDistortion, setDynamicDistortion] = useState(distortion);
   const [dynamicGlitch, setDynamicGlitch] = useState(false);
+  const lastUpdateRef = useRef(0);
+  const dynamicRef = useRef({ bloom: bloomIntensity, split: rgbSplitAmount, distortion, glitch: false });
 
-  useFrame(() => {
+  useFrame((state) => {
+    const now = state.clock.elapsedTime;
+    if (now - lastUpdateRef.current < 1 / 30) return;
+    lastUpdateRef.current = now;
+
     const { energy, beat, bass, subBass, mid, treble, highMid, spectralFlux, transient, spectralCentroid, dynamicRange } = getAudioDriveSnapshot(audioDriveMode);
     const morph = autoVjEnabled && audioFxReactive ? 1 : 0;
     
     const targetBloom = bloomIntensity + (energy * 0.95 + beat * 1.7 + treble * 0.45 + spectralFlux * 1.1 + transient * 0.85) * morph;
-    setDynamicBloom(prev => prev + (targetBloom - prev) * 0.1); 
-
     const targetSplit = rgbSplitAmount + (bass * 0.014 + subBass * 0.012 + beat * 0.02 + highMid * 0.012 + spectralCentroid * 0.014 + spectralFlux * 0.018 + distortion * 0.006) * morph;
-    setDynamicSplit(prev => prev + (targetSplit - prev) * 0.2);
-
     const targetDistortion = distortion + (subBass * 0.42 + bass * 0.24 + mid * 0.16 + dynamicRange * 0.34 + spectralFlux * 0.42 + beat * 0.24) * morph;
-    setDynamicDistortion(prev => prev + (targetDistortion - prev) * 0.16);
+    const targetGlitch = glitchActive || (morph > 0 && (beat > 0.65 || treble > 0.58 || bass > 0.72 || transient > 0.68 || spectralFlux > 0.64));
 
-    setDynamicGlitch(glitchActive || (morph > 0 && (beat > 0.65 || treble > 0.58 || bass > 0.72 || transient > 0.68 || spectralFlux > 0.64)));
+    const next = {
+      bloom: dynamicRef.current.bloom + (targetBloom - dynamicRef.current.bloom) * 0.1,
+      split: dynamicRef.current.split + (targetSplit - dynamicRef.current.split) * 0.2,
+      distortion: dynamicRef.current.distortion + (targetDistortion - dynamicRef.current.distortion) * 0.16,
+      glitch: targetGlitch,
+    };
+
+    setDynamicBloom(next.bloom);
+    setDynamicSplit(next.split);
+    setDynamicDistortion(next.distortion);
+    if (next.glitch !== dynamicRef.current.glitch) setDynamicGlitch(next.glitch);
+    dynamicRef.current = next;
   });
 
   return (
@@ -1386,47 +1402,146 @@ function AudioMorphTone() {
   return null;
 }
 
-export function Visualizer() {
-  const { audioDriveMode, autoVjEnabled, contrast, brightness, saturation, bgColor } = useStore();
-  const [audioFilter, setAudioFilter] = useState({ contrast: 0, brightness: 0, saturation: 0 });
+export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } = {}) {
+  const {
+    activeScreenId,
+    audioDriveMode,
+    autoVjEnabled,
+    bgColor,
+    brightness,
+    contrast,
+    currentScene,
+    outputMode,
+    saturation,
+    screenAudioReactive,
+    screenTransitionAmount,
+    screenTransitionStyle,
+    syncedScreenSignal,
+    visualScreens,
+    language,
+  } = useStore();
+  const labels = screenText[language];
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isScreenOutput = Boolean(screenIdOverride);
+  const effectiveScreenId = screenIdOverride || activeScreenId;
+  const activeScreen = visualScreens.find((screen) => screen.id === effectiveScreenId) || visualScreens[0];
+  const enabledScreens = visualScreens.filter((screen) => screen.enabled);
+  const sceneOverride = isScreenOutput
+    ? (outputMode === 'mirror' ? currentScene : activeScreen?.scene)
+    : currentScene;
+  const displaySignal = syncedScreenSignal;
+  const deviceAspectClass = activeScreen?.device === 'phone'
+    ? 'inset-x-[36%] inset-y-[8%]'
+    : activeScreen?.device === 'tablet'
+      ? 'inset-x-[20%] inset-y-[10%]'
+      : activeScreen?.device === 'projector'
+        ? 'inset-x-[8%] inset-y-[12%]'
+        : 'inset-4';
 
   useEffect(() => {
-    if (!autoVjEnabled) {
-      setAudioFilter({ contrast: 0, brightness: 0, saturation: 0 });
-      return;
-    }
-
     let frame = 0;
+    let lastUpdate = 0;
     const updateFilter = () => {
-      const { bass, treble, energy, beat, spectralFlux, transient, spectralCentroid } = getAudioDriveSnapshot(audioDriveMode);
-      setAudioFilter({
-        contrast: energy * 0.1 + beat * 0.05 + spectralFlux * 0.12,
-        brightness: bass * 0.06 + beat * 0.05 + transient * 0.07,
-        saturation: treble * 0.28 + energy * 0.1 + spectralCentroid * 0.18,
-      });
+      const now = performance.now();
+      if (containerRef.current && now - lastUpdate >= 50) {
+        lastUpdate = now;
+        let audioContrast = 0;
+        let audioBrightness = 0;
+        let audioSaturation = 0;
+
+        if (autoVjEnabled) {
+          const { bass, treble, energy, beat, spectralFlux, transient, spectralCentroid } = getAudioDriveSnapshot(audioDriveMode);
+          audioContrast = energy * 0.1 + beat * 0.05 + spectralFlux * 0.12;
+          audioBrightness = bass * 0.06 + beat * 0.05 + transient * 0.07;
+          audioSaturation = treble * 0.28 + energy * 0.1 + spectralCentroid * 0.18;
+        }
+
+        containerRef.current.style.filter = `contrast(${contrast + audioContrast}) brightness(${brightness + audioBrightness}) saturate(${saturation + audioSaturation})`;
+      }
       frame = requestAnimationFrame(updateFilter);
     };
 
     updateFilter();
     return () => cancelAnimationFrame(frame);
-  }, [audioDriveMode, autoVjEnabled]);
+  }, [audioDriveMode, autoVjEnabled, brightness, contrast, saturation]);
   
   return (
     <div 
-      className="absolute inset-0 w-full h-full"
-      style={{
-        filter: `contrast(${contrast + audioFilter.contrast}) brightness(${brightness + audioFilter.brightness}) saturate(${saturation + audioFilter.saturation})`
-      }}
+      ref={containerRef}
+      className="absolute inset-0 h-full min-h-0 w-full overflow-hidden"
+      style={{ filter: `contrast(${contrast}) brightness(${brightness}) saturate(${saturation})` }}
     >
-      <Canvas camera={{ position: [0, 0, 5], fov: 60 }} dpr={[1, 2]} gl={{ antialias: true, alpha: false }}>
+      <Canvas
+        className="screen-canvas !absolute !inset-0 !h-full !w-full"
+        style={{ width: '100%', height: '100%' }}
+        camera={{ position: [0, 0, 5], fov: 60 }}
+        dpr={[1, 2]}
+        gl={{ antialias: true, alpha: false }}
+      >
         <color attach="background" args={[bgColor]} />
         <AudioMorphTone />
         <MusicCameraRig />
-        <SceneRouter />
+        <SceneRouter sceneOverride={sceneOverride} />
         <AudioMutationOverlay />
-        <VisualText />
+        <VisualText sceneOverride={sceneOverride} />
         <PostProcessing />
       </Canvas>
+      {isScreenOutput && !activeScreen?.enabled && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 text-[11px] font-bold uppercase tracking-[0.35em] text-white/50">
+          {labels.outputDisabled}
+        </div>
+      )}
+      {isScreenOutput && (
+        <div className="pointer-events-none absolute inset-0 z-30">
+          <div
+            className={`absolute ${deviceAspectClass} rounded-lg border transition-all duration-150 ${
+              screenTransitionStyle === 'strobe' && displaySignal > 0.55
+                ? 'border-white bg-white/10'
+                : 'border-cyan-300/55'
+            }`}
+            style={{
+              boxShadow: `0 0 ${18 + displaySignal * 72}px rgba(103,232,249,${0.12 + displaySignal * 0.22}) inset, 0 0 ${12 + displaySignal * 48}px rgba(103,232,249,${0.12 + displaySignal * 0.18})`,
+              opacity: screenTransitionStyle === 'cut' ? 1 : 0.58 + displaySignal * 0.34,
+              transform: screenTransitionStyle === 'scan' ? `translateX(${Math.sin(displaySignal * Math.PI * 2) * 8}px)` : undefined,
+            }}
+          >
+            <div
+              className="absolute left-0 top-0 h-full w-full rounded-lg"
+              style={{
+                background: screenTransitionStyle === 'scan'
+                  ? `linear-gradient(90deg, transparent ${Math.max(0, displaySignal * 100 - 12)}%, rgba(103,232,249,0.28) ${displaySignal * 100}%, transparent ${Math.min(100, displaySignal * 100 + 12)}%)`
+                  : screenTransitionStyle === 'crossfade'
+                    ? `rgba(103,232,249,${displaySignal * 0.08})`
+                    : 'transparent',
+              }}
+            />
+          </div>
+          <div className="absolute left-4 top-4 rounded-lg border border-white/10 bg-black/55 px-3 py-2 backdrop-blur-md">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-200">{activeScreen?.name || 'Screen'}</div>
+            <div className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-wider text-white/45">
+              <span>{getOutputModeLabel(language, outputMode)}</span>
+              <span className="h-1 w-1 rounded-full bg-white/25" />
+              <span>{getTransitionLabel(language, screenTransitionStyle)}</span>
+              <span className="h-1 w-1 rounded-full bg-white/25" />
+              <span>{Math.round(displaySignal * 100)}%</span>
+            </div>
+          </div>
+          <div className="absolute bottom-4 left-4 flex max-w-[70%] gap-2 overflow-hidden">
+            {enabledScreens.map((screen) => (
+              <div
+                key={screen.id}
+                className={`rounded-md border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${
+                  screen.id === effectiveScreenId
+                    ? 'border-cyan-300 bg-cyan-300 text-black'
+                    : 'border-white/10 bg-black/45 text-white/45'
+                }`}
+              >
+                {screen.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

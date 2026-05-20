@@ -150,12 +150,11 @@ export function ControlPanel() {
 
         <button
           onClick={() => setAutoVjControl('autoVjEnabled', !autoVjEnabled)}
-          disabled={visualInputSource === 'api'}
           className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 text-left transition-all ${
             autoVjEnabled
               ? 'border-orange-400/60 bg-orange-400 text-black shadow-[0_0_24px_rgba(251,146,60,0.18)]'
               : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10'
-          } ${visualInputSource === 'api' ? 'cursor-not-allowed opacity-55' : ''}`}
+          }`}
         >
           <span className="flex min-w-0 items-center gap-3">
             <Power size={15} className="shrink-0" />
@@ -172,9 +171,7 @@ export function ControlPanel() {
         <Toggle
           label={i18n.ORBIT_CAMERA_WITH_MUSIC || 'Orbit camera with music'}
           active={musicCameraEnabled}
-          onToggle={() => {
-            if (visualInputSource !== 'api') setAutoVjControl('musicCameraEnabled', !musicCameraEnabled);
-          }}
+          onToggle={() => setAutoVjControl('musicCameraEnabled', !musicCameraEnabled)}
         />
 
         <div className="flex flex-col gap-2">

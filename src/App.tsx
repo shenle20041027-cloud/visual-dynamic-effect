@@ -13,6 +13,7 @@ import { ScreenPanel } from '@/components/layout/ScreenPanel';
 import { ScreenOutput } from '@/components/screen/ScreenOutput';
 import { Visualizer } from '@/components/visualizer/Visualizer';
 import { MusicProjectBar } from '@/components/music/MusicProjectBar';
+import { ShowControlBridge } from '@/components/ShowControlBridge';
 import { Play, Sparkles, Focus, Volume2, Type, Aperture, LayoutGrid, Monitor } from 'lucide-react';
 import { t } from '@/lib/i18n';
 import { useScreenSync } from '@/lib/screenSync';
@@ -70,35 +71,38 @@ function ControllerApp() {
 
   if (!audioReady) {
     return (
-      <div className="w-screen h-screen flex flex-col items-center justify-center bg-black text-white relative overflow-hidden">
-        {/* Sleek blurred backgrounds */}
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-purple-600/30 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-blue-600/30 blur-[120px] pointer-events-none" />
-        
-        <div className="z-10 flex flex-col items-center max-w-2xl text-center">
-          <div className="mb-6 w-12 h-12 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl">
-            <Sparkles className="text-white w-6 h-6" />
-          </div>
-          <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50">
-            {i18n.APP_TITLE || 'Visual Interface'}
-          </h1>
-          <p className="text-white/50 mb-12 text-lg font-medium">
-            {i18n.PROFESSIONAL_VJ || 'Professional spatial visual engine powered by real-time audio and AI.'}
-          </p>
+      <>
+        <ShowControlBridge />
+        <div className="w-screen h-screen flex flex-col items-center justify-center bg-black text-white relative overflow-hidden">
+          {/* Sleek blurred backgrounds */}
+          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-purple-600/30 blur-[120px] pointer-events-none" />
+          <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-blue-600/30 blur-[120px] pointer-events-none" />
           
-          <button 
-            onClick={handleStart}
-            className="group relative px-8 py-4 bg-white text-black font-semibold rounded-full overflow-hidden hover:scale-105 transition-all duration-300 shadow-[0_0_40px_rgba(255,255,255,0.3)]"
-          >
-            <div className="relative flex items-center gap-3">
-              <Play fill="currentColor" size={18} />
-              <span>{i18n.INIT_AUDIO || 'Initialize Engine'}</span>
+          <div className="z-10 flex flex-col items-center max-w-2xl text-center">
+            <div className="mb-6 w-12 h-12 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl">
+              <Sparkles className="text-white w-6 h-6" />
             </div>
-          </button>
-          
-          {initError && <p className="text-red-400 mt-6 text-sm bg-red-400/10 px-4 py-2 rounded-full border border-red-400/20">{initError}</p>}
+            <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50">
+              {i18n.APP_TITLE || 'Visual Interface'}
+            </h1>
+            <p className="text-white/50 mb-12 text-lg font-medium">
+              {i18n.PROFESSIONAL_VJ || 'Professional spatial visual engine powered by real-time audio and AI.'}
+            </p>
+            
+            <button 
+              onClick={handleStart}
+              className="group relative px-8 py-4 bg-white text-black font-semibold rounded-full overflow-hidden hover:scale-105 transition-all duration-300 shadow-[0_0_40px_rgba(255,255,255,0.3)]"
+            >
+              <div className="relative flex items-center gap-3">
+                <Play fill="currentColor" size={18} />
+                <span>{i18n.INIT_AUDIO || 'Initialize Engine'}</span>
+              </div>
+            </button>
+            
+            {initError && <p className="text-red-400 mt-6 text-sm bg-red-400/10 px-4 py-2 rounded-full border border-red-400/20">{initError}</p>}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -116,6 +120,7 @@ function ControllerApp() {
 
   return (
     <div className="w-screen h-screen bg-[#020202] text-white flex flex-col font-sans overflow-hidden">
+      <ShowControlBridge />
       
       {/* Background Ambience */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-[200px] bg-purple-500/5 blur-[150px] pointer-events-none" />

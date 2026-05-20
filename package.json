@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "node server.mjs",
     "build": "vite build",
+    "start": "NODE_ENV=production node server.mjs",
+    "live": "npm run build && npm run start",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"

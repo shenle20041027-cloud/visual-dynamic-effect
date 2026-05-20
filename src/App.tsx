@@ -14,9 +14,11 @@ import { ScreenOutput } from '@/components/screen/ScreenOutput';
 import { Visualizer } from '@/components/visualizer/Visualizer';
 import { MusicProjectBar } from '@/components/music/MusicProjectBar';
 import { ShowControlBridge } from '@/components/ShowControlBridge';
-import { Play, Sparkles, Focus, Volume2, Type, Aperture, LayoutGrid, Monitor } from 'lucide-react';
+import { Sparkles, Focus, Volume2, Type, Aperture, LayoutGrid, Monitor, Mic, MicOff, Music2, Radio } from 'lucide-react';
 import { t } from '@/lib/i18n';
 import { useScreenSync } from '@/lib/screenSync';
+import { useApiAudioSource } from '@/lib/useApiAudioSource';
+import type { VisualInputSource } from '@/store/useStore';
 
 export default function App() {
   const screenMatch = window.location.pathname.match(/^\/screen\/([^/]+)/);
@@ -29,10 +31,24 @@ export default function App() {
 }
 
 function ControllerApp() {
-  const { audioReady, setAudioReady, inputGain, language, setLanguage, isFullscreen, activeLeftPanel, setActiveLeftPanel } = useStore();
+  const {
+    audioReady,
+    setAudioReady,
+    inputGain,
+    language,
+    setLanguage,
+    isFullscreen,
+    activeLeftPanel,
+    setActiveLeftPanel,
+    visualInputSource,
+    setVisualInputSource,
+    musicPanelOpen,
+    setMusicPanelOpen,
+  } = useStore();
   const [initError, setInitError] = useState('');
   const i18n = t[language];
   useScreenSync('controller');
+  useApiAudioSource(visualInputSource === 'api');
 
   useEffect(() => {
     let animationFrameId: number;
@@ -60,51 +76,30 @@ function ControllerApp() {
     };
   }, [audioReady]);
 
-  const handleStart = async () => {
+  const activateMic = async () => {
     try {
       await audioEngine.initialize();
       setAudioReady(true);
+      setVisualInputSource('mic');
+      setInitError('');
     } catch (err: any) {
       setInitError('Failed to access microphone. Please allow permissions.');
     }
   };
 
-  if (!audioReady) {
-    return (
-      <>
-        <ShowControlBridge />
-        <div className="w-screen h-screen flex flex-col items-center justify-center bg-black text-white relative overflow-hidden">
-          {/* Sleek blurred backgrounds */}
-          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-purple-600/30 blur-[120px] pointer-events-none" />
-          <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-blue-600/30 blur-[120px] pointer-events-none" />
-          
-          <div className="z-10 flex flex-col items-center max-w-2xl text-center">
-            <div className="mb-6 w-12 h-12 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl">
-              <Sparkles className="text-white w-6 h-6" />
-            </div>
-            <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50">
-              {i18n.APP_TITLE || 'Visual Interface'}
-            </h1>
-            <p className="text-white/50 mb-12 text-lg font-medium">
-              {i18n.PROFESSIONAL_VJ || 'Professional spatial visual engine powered by real-time audio and AI.'}
-            </p>
-            
-            <button 
-              onClick={handleStart}
-              className="group relative px-8 py-4 bg-white text-black font-semibold rounded-full overflow-hidden hover:scale-105 transition-all duration-300 shadow-[0_0_40px_rgba(255,255,255,0.3)]"
-            >
-              <div className="relative flex items-center gap-3">
-                <Play fill="currentColor" size={18} />
-                <span>{i18n.INIT_AUDIO || 'Initialize Engine'}</span>
-              </div>
-            </button>
-            
-            {initError && <p className="text-red-400 mt-6 text-sm bg-red-400/10 px-4 py-2 rounded-full border border-red-400/20">{initError}</p>}
-          </div>
-        </div>
-      </>
-    );
-  }
+  const deactivateMic = () => {
+    audioEngine.destroy();
+    setAudioReady(false);
+    if (visualInputSource === 'mic') setVisualInputSource('api');
+  };
+
+  const selectInputSource = (source: VisualInputSource) => {
+    if (source === 'mic') {
+      void activateMic();
+      return;
+    }
+    setVisualInputSource(source);
+  };
 
   // Left Dock specific rendering
   const renderLeftPanelContent = () => {
@@ -135,6 +130,35 @@ function ControllerApp() {
              <h1 className="text-xs font-bold tracking-widest uppercase">{i18n.APP_HEADER || 'Nexus.VJ Workstation'}</h1>
           </div>
           <div className="flex items-center gap-6">
+             <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/40 p-1">
+               {[
+                 { source: 'mic' as const, label: 'MIC', icon: audioReady ? <Mic size={13} /> : <MicOff size={13} /> },
+                 { source: 'music' as const, label: 'MUSIC DEBUG', icon: <Music2 size={13} /> },
+                 { source: 'api' as const, label: 'SHOW API', icon: <Radio size={13} /> },
+               ].map((option) => (
+                 <button
+                   key={option.source}
+                   onClick={() => selectInputSource(option.source)}
+                   className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                     visualInputSource === option.source
+                       ? 'bg-white text-black'
+                       : 'text-white/45 hover:bg-white/10 hover:text-white'
+                   }`}
+                 >
+                   {option.icon}
+                   {option.label}
+                 </button>
+               ))}
+               {audioReady && (
+                 <button
+                   onClick={deactivateMic}
+                   className="flex h-7 items-center justify-center rounded-md px-2 text-[10px] font-bold uppercase tracking-widest text-white/45 hover:bg-red-500/20 hover:text-red-200"
+                   title="Stop microphone"
+                 >
+                   <MicOff size={13} />
+                 </button>
+               )}
+             </div>
              <div className="flex items-center gap-2 text-[10px] font-bold text-white/50 uppercase tracking-widest">
                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                {i18n.LIVE_ENGINE_STATUS || 'Live Engine Status: Optimal'}
@@ -202,11 +226,43 @@ function ControllerApp() {
 
             {/* CENTER CANVAS & TIMELINE */}
             <div className="flex-1 bg-black relative group flex flex-col min-w-0">
-               <div className={isFullscreen ? 'hidden' : 'contents'}>
-                 <MusicProjectBar />
-               </div>
+               {!isFullscreen && visualInputSource === 'music' && (
+                 musicPanelOpen ? (
+                   <div className="contents">
+                     <div className="relative">
+                       <MusicProjectBar />
+                       <button
+                         type="button"
+                         onClick={() => setMusicPanelOpen(false)}
+                         className="absolute right-3 top-3 z-20 rounded-md border border-white/10 bg-black/60 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-white/50 hover:bg-white hover:text-black"
+                       >
+                         Hide
+                       </button>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/10 bg-[#050505] px-4">
+                     <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-white/45">
+                       <Music2 size={14} className="text-emerald-300" />
+                       Built-in Music Debug
+                     </div>
+                     <button
+                       type="button"
+                       onClick={() => setMusicPanelOpen(true)}
+                       className="rounded-md bg-emerald-300 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-black"
+                     >
+                       Show Panel
+                     </button>
+                   </div>
+                 )
+               )}
                <div className="flex-1 relative min-h-0">
                  <Visualizer />
+                 {initError && visualInputSource === 'mic' && (
+                   <div className="absolute left-4 top-4 z-50 rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-xs font-bold text-red-100">
+                     {initError}
+                   </div>
+                 )}
                  
                  {/* Fullscreen UI trigger */}
                   <button 

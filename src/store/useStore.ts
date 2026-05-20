@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AudioDriveMode } from '../lib/audioDrive';
 
+export type VisualInputSource = 'mic' | 'music' | 'api';
 export type OutputMode = 'mirror' | 'solo' | 'split';
 export type ScreenTransitionStyle = 'crossfade' | 'scan' | 'strobe' | 'cut';
 export type OutputDeviceType = 'stage' | 'projector' | 'led' | 'tablet' | 'phone';
@@ -38,6 +39,10 @@ export interface VisualMemory {
 interface VisualizerState {
   audioReady: boolean;
   setAudioReady: (ready: boolean) => void;
+  visualInputSource: VisualInputSource;
+  musicPanelOpen: boolean;
+  setVisualInputSource: (source: VisualInputSource) => void;
+  setMusicPanelOpen: (open: boolean) => void;
   
   // Language
   language: 'EN' | 'ZH';
@@ -212,6 +217,16 @@ const persistMemories = (memories: VisualMemory[]) => {
 export const useStore = create<VisualizerState>((set) => ({
   audioReady: false,
   setAudioReady: (ready) => set({ audioReady: ready }),
+  visualInputSource: 'api',
+  musicPanelOpen: false,
+  setVisualInputSource: (source) => set({
+    visualInputSource: source,
+    musicPanelOpen: source === 'music',
+    audioDriveMode: source === 'music' ? 'music' : source === 'api' ? 'mic' : 'mic',
+    autoVjEnabled: source !== 'api',
+    musicCameraEnabled: source === 'music',
+  }),
+  setMusicPanelOpen: (open) => set({ musicPanelOpen: open }),
 
   // Language
   language: 'EN',

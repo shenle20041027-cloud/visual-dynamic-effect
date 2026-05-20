@@ -90,6 +90,35 @@ app.get('/api/network', (_request, response) => {
   });
 });
 
+// Mock audio API endpoint for testing
+const mockAudioTime = Date.now();
+app.get('/api/spec', (_request, response) => {
+  const elapsed = (Date.now() - mockAudioTime) * 0.001; // seconds
+  
+  // Generate mock audio data using sine waves at different frequencies
+  const slowWave = Math.sin(elapsed * 1.5) * 0.5 + 0.5;
+  const fastWave = Math.sin(elapsed * 8.5) * 0.5 + 0.5;
+  const mediumWave = Math.sin(elapsed * 4.2) * 0.5 + 0.5;
+  
+  response.json({
+    volume: Math.max(0, slowWave) * 0.7,
+    subBass: slowWave * 0.8,
+    bass: Math.max(0, slowWave - 0.2) * 0.9,
+    lowMid: mediumWave * 0.6,
+    mid: mediumWave * 0.65,
+    highMid: fastWave * 0.5,
+    treble: Math.max(0, fastWave - 0.3) * 0.6,
+    energy: (slowWave + mediumWave) * 0.5 * 0.8,
+    beat: slowWave > 0.85 ? Math.min(1, (slowWave - 0.85) * 10) : 0,
+    spectralCentroid: mediumWave * 0.6,
+    spectralFlux: fastWave > 0.7 ? (fastWave - 0.7) * 3 : 0,
+    transient: fastWave > 0.8 ? Math.min(1, (fastWave - 0.8) * 5) : 0,
+    dynamicRange: 0.5 + slowWave * 0.3,
+    syncedSignal: mediumWave,
+  });
+});
+
+
 const vite = await createViteServer({
   server: { middlewareMode: true },
   appType: 'spa',

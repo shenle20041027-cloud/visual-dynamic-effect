@@ -70,6 +70,7 @@ export function ShowControlBridge() {
       letterSpacing: store.textLetterSpacing,
     },
     audioDriveMode: store.audioDriveMode,
+    inputSource: store.visualInputSource,
     fullscreen: store.isFullscreen,
     visualMemories: store.visualMemories.map((memory) => ({
       id: memory.id,
@@ -101,6 +102,7 @@ export function ShowControlBridge() {
     store.textFontWeight,
     store.textLetterSpacing,
     store.audioDriveMode,
+    store.visualInputSource,
     store.isFullscreen,
     store.visualMemories,
   ]);
@@ -122,9 +124,7 @@ function applyVisualCommand(command: ControlCommand) {
   const state = useStore.getState();
   const value = command.value;
 
-  state.setAudioDriveMode('mic');
-  state.setAutoVjControl('autoVjEnabled', false);
-  state.setAutoVjControl('musicCameraEnabled', false);
+  state.setVisualInputSource('api');
 
   if (command.command === 'setScene' && typeof value === 'string') {
     applyRemoteScene(value);

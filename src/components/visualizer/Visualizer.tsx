@@ -1,11 +1,122 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Glitch, ChromaticAberration, Vignette } from '@react-three/postprocessing';
-import { Text } from '@react-three/drei';
-import { GlitchMode, BlendFunction } from 'postprocessing';
+import { GlitchMode } from 'postprocessing';
 import * as THREE from 'three';
-import { audioEngine } from '@/lib/AudioEngine';
+import { getAudioDriveSnapshot } from '@/lib/audioDrive';
 import { useStore } from '@/store/useStore';
+
+function getReactiveAudio() {
+  const { audioDriveMode, autoVjEnabled } = useStore.getState();
+  const audio = getAudioDriveSnapshot(audioDriveMode);
+  const motionAmount = autoVjEnabled ? 0.9 : 0;
+  const beatAmount = autoVjEnabled ? 0.75 : 0;
+
+  return {
+    ...audio,
+    volume: audio.volume * motionAmount,
+    subBass: audio.subBass * motionAmount,
+    bass: audio.bass * motionAmount,
+    lowMid: audio.lowMid * motionAmount,
+    mid: audio.mid * motionAmount,
+    highMid: audio.highMid * motionAmount,
+    treble: audio.treble * motionAmount,
+    energy: audio.energy * motionAmount,
+    beat: audio.beat * beatAmount,
+    spectralCentroid: audio.spectralCentroid * motionAmount,
+    spectralFlux: audio.spectralFlux * motionAmount,
+    transient: audio.transient * motionAmount,
+    dynamicRange: audio.dynamicRange * motionAmount,
+  };
+}
+
+const audioMutationFragment = `
+  uniform float uTime;
+  uniform float uEnergy;
+  uniform float uFlux;
+  uniform float uTransient;
+  uniform float uCentroid;
+  uniform float uDynamicRange;
+  uniform vec3 uBaseColor;
+  uniform vec3 uSecondaryColor;
+  uniform vec3 uAccentColor;
+  varying vec2 vUv;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+
+  void main() {
+    vec2 p = vUv * 2.0 - 1.0;
+    float sweepSpeed = 0.18 + uCentroid * 1.45 + uFlux * 0.75;
+    float grainScale = 4.0 + uCentroid * 18.0 + uDynamicRange * 8.0;
+    float field = noise(p * grainScale + vec2(uTime * sweepSpeed, -uTime * (0.12 + uFlux)));
+    float ribbons = sin((p.x * (5.0 + uCentroid * 16.0) + p.y * (2.0 + uDynamicRange * 8.0)) + uTime * (1.5 + uFlux * 4.5));
+    float mask = smoothstep(0.44, 0.94, field + ribbons * (0.18 + uTransient * 0.28));
+    float radial = smoothstep(1.35, 0.15, length(p + vec2(sin(uTime * 0.3) * 0.18, cos(uTime * 0.24) * 0.12)));
+    float intensity = mask * radial * (0.05 + uEnergy * 0.22 + uFlux * 0.34 + uTransient * 0.3);
+    vec3 tone = mix(uBaseColor, uSecondaryColor, clamp(uCentroid * 1.25, 0.0, 1.0));
+    tone = mix(tone, uAccentColor, clamp(uTransient * 0.7, 0.0, 0.55));
+    gl_FragColor = vec4(tone * intensity, clamp(intensity, 0.0, 0.72));
+  }
+`;
+
+function AudioMutationOverlay() {
+  const matRef = useRef<THREE.ShaderMaterial>(null);
+  const { baseColor, secondaryColor, accentColor } = useStore();
+
+  useFrame((state) => {
+    if (!matRef.current) return;
+    const { energy, spectralFlux, transient, spectralCentroid, dynamicRange } = getReactiveAudio();
+    const uniforms = matRef.current.uniforms;
+    uniforms.uTime.value = state.clock.elapsedTime;
+    uniforms.uEnergy.value += (energy - uniforms.uEnergy.value) * 0.12;
+    uniforms.uFlux.value += (spectralFlux - uniforms.uFlux.value) * 0.25;
+    uniforms.uTransient.value += (transient - uniforms.uTransient.value) * 0.34;
+    uniforms.uCentroid.value += (spectralCentroid - uniforms.uCentroid.value) * 0.16;
+    uniforms.uDynamicRange.value += (dynamicRange - uniforms.uDynamicRange.value) * 0.14;
+    uniforms.uBaseColor.value.set(baseColor);
+    uniforms.uSecondaryColor.value.set(secondaryColor);
+    uniforms.uAccentColor.value.set(accentColor);
+  });
+
+  return (
+    <mesh position={[0, 0, 2.8]} renderOrder={50}>
+      <planeGeometry args={[22, 12]} />
+      <shaderMaterial
+        ref={matRef}
+        vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
+        fragmentShader={audioMutationFragment}
+        uniforms={{
+          uTime: { value: 0 },
+          uEnergy: { value: 0 },
+          uFlux: { value: 0 },
+          uTransient: { value: 0 },
+          uCentroid: { value: 0 },
+          uDynamicRange: { value: 0 },
+          uBaseColor: { value: new THREE.Color(baseColor) },
+          uSecondaryColor: { value: new THREE.Color(secondaryColor) },
+          uAccentColor: { value: new THREE.Color(accentColor) },
+        }}
+        transparent
+        depthTest={false}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
+  );
+}
 
 // === WEBCAM HOOK ===
 function useWebcamTexture() {
@@ -289,7 +400,7 @@ function VoidScene() {
 
   useFrame((state, delta) => {
     if(!materialRef.current || !pointsRef.current) return;
-    const { subBass, bass, mid, energy, beat } = audioEngine.current;
+    const { subBass, bass, mid, energy, beat } = getReactiveAudio();
     
     // Beat causes sudden rotation surge
     pointsRef.current.rotation.y += delta * 0.1 * speed * (1 + beat * 5.0 + subBass);
@@ -464,7 +575,7 @@ function LiquidScene() {
   
   useFrame((_, delta) => {
     if(!materialRef.current) return;
-    const { volume, bass, lowMid, energy, beat, treble } = audioEngine.current;
+    const { volume, bass, lowMid, energy, beat, treble } = getReactiveAudio();
     const spectralFlux = Math.max(treble, beat * 0.5);
     const transient = beat;
     const audioLift = volume * 0.36 + energy * 0.42 + bass * 0.55 + lowMid * 0.22;
@@ -512,7 +623,7 @@ function CyberScene() {
   
   useFrame((state) => {
     if(!matRef.current) return;
-    const { bass, energy } = audioEngine.current;
+    const { bass, energy } = getReactiveAudio();
     matRef.current.uniforms.uTime.value = state.clock.elapsedTime * speed;
     matRef.current.uniforms.uBass.value = bass;
     matRef.current.uniforms.uEnergy.value = energy;
@@ -533,6 +644,173 @@ function CyberScene() {
           uEnergy: { value: 0 },
           uColor: { value: new THREE.Color() },
           tText: { value: null }
+        }}
+        transparent={false}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+// Dynamic Type / Sonic Topology scene adapted for the VJ stage.
+const topologyFragment = `
+  uniform float uTime;
+  uniform sampler2D uTexture;
+  uniform float uThickness;
+  uniform float uAmplitude;
+  uniform float uSpeed;
+  uniform float uAudio;
+  uniform float uLiquify;
+  uniform vec3 uColor1;
+  uniform vec3 uColor2;
+  uniform float uFrequency;
+  uniform float uAspect;
+  varying vec2 vUv;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
+  }
+
+  void main() {
+    vec2 uv = vUv;
+    vec2 center = (uv - 0.5) * vec2(uAspect, 1.0);
+    float currentSpeed = uSpeed + uAudio * 2.0;
+    float currentAmp = uAmplitude + uAudio * 0.2;
+
+    float liquifyScale = 1.2 + uLiquify * 5.5;
+    float t = uTime * currentSpeed;
+    float noiseX = noise(uv * liquifyScale + vec2(t * 0.22, -t * 0.17));
+    float noiseY = noise(uv * liquifyScale + vec2(19.7 - t * 0.15, 11.3 + t * 0.2));
+    vec2 distortedUV = uv + vec2(noiseX, noiseY) * currentAmp;
+
+    float d = texture2D(uTexture, distortedUV).r;
+    float bgNoise = max(0.0, noise(uv * 2.1 + uTime * 0.08));
+    vec3 bg = uColor2 * bgNoise * (0.025 + uAudio * 0.18);
+
+    if (d < 0.005) {
+      float dust = step(0.988, hash(floor(uv * vec2(180.0, 95.0)) + floor(uTime * 6.0)));
+      gl_FragColor = vec4(bg + dust * uColor1 * 0.08 * uAudio, 1.0);
+      return;
+    }
+
+    float rings = fract(d * uFrequency - t * 1.8);
+    float width = uThickness * 0.5;
+    float lineAlpha = smoothstep(0.5 - width - 0.055, 0.5 - width, rings)
+                    - smoothstep(0.5 + width, 0.5 + width + 0.055, rings);
+    float mask = smoothstep(0.01, 0.16, d);
+    float edge = smoothstep(0.02, 0.25, d) * (1.0 - smoothstep(0.72, 1.0, d));
+    lineAlpha *= mask;
+
+    vec3 contour = mix(uColor1, uColor2, clamp(uAudio * 1.4 + (1.0 - d), 0.0, 1.0));
+    vec3 glow = uColor2 * mask * d * clamp(0.25 + uAudio, 0.25, 1.0) * 0.55;
+    vec3 whiteCore = vec3(1.0) * smoothstep(0.82, 1.0, d) * (0.12 + uAudio * 0.2);
+    vec3 finalColor = bg + contour * lineAlpha + glow + whiteCore;
+
+    finalColor += uColor1 * edge * 0.08 * (0.5 + uAudio);
+    finalColor *= smoothstep(1.45, 0.25, length(center));
+    finalColor *= 0.96 + sin(vUv.y * 900.0) * 0.04;
+
+    gl_FragColor = vec4(finalColor, 1.0);
+  }
+`;
+
+function useTopologyTexture(text: string, blurIntensity: number) {
+  const canvas = useMemo(() => document.createElement('canvas'), []);
+  const texture = useMemo(() => {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    return tex;
+  }, [canvas]);
+
+  useEffect(() => {
+    canvas.width = 2048;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const displayText = (text || 'YOU').toUpperCase();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.filter = `blur(${Math.max(1, blurIntensity * 80)}px)`;
+
+    let fontSize = 520;
+    do {
+      ctx.font = `900 ${fontSize}px Inter, Arial Black, system-ui, sans-serif`;
+      fontSize -= 16;
+    } while (ctx.measureText(displayText).width > canvas.width * 1.22 && fontSize > 160);
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.scale(1.28, 1.0);
+    ctx.transform(1, 0, -0.2, 1, 0, 0);
+    ctx.fillText(displayText, 0, 0);
+
+    texture.needsUpdate = true;
+  }, [text, blurIntensity, canvas, texture]);
+
+  return texture;
+}
+
+function TopologyScene() {
+  const { speed, chaos, distortion, textInput, baseColor, secondaryColor, bloomIntensity } = useStore();
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const texture = useTopologyTexture(textInput || 'YOU', 0.35 + distortion * 0.25);
+  const { size } = useThree();
+
+  useFrame((state, delta) => {
+    if (!materialRef.current) return;
+    const { energy, beat, bass, treble, spectralFlux, spectralCentroid, transient } = getReactiveAudio();
+    const audio = Math.min(1.55, energy * 0.78 + beat * 0.45 + bass * 0.32 + treble * 0.2 + spectralFlux * 0.45 + transient * 0.28);
+    const uniforms = materialRef.current.uniforms;
+    uniforms.uTime.value += delta;
+    uniforms.uTexture.value = texture;
+    uniforms.uAudio.value += (audio - uniforms.uAudio.value) * 0.12;
+    uniforms.uThickness.value = 0.1 + Math.min(0.34, bloomIntensity * 0.025 + beat * 0.06 + transient * 0.08);
+    uniforms.uAmplitude.value = 0.08 + distortion * 0.28 + chaos * 0.16 + spectralFlux * 0.08;
+    uniforms.uSpeed.value = 0.65 + speed * 0.75 + transient * 0.45;
+    uniforms.uLiquify.value = 0.42 + chaos * 0.55 + bass * 0.2 + spectralFlux * 0.28;
+    uniforms.uFrequency.value = 18 + chaos * 18 + treble * 8 + spectralCentroid * 12;
+    uniforms.uAspect.value = size.width / Math.max(size.height, 1);
+    uniforms.uColor1.value.set(baseColor);
+    uniforms.uColor2.value.set(secondaryColor);
+  });
+
+  return (
+    <mesh position={[0, 0, -1]}>
+      <planeGeometry args={[24, 12]} />
+      <shaderMaterial
+        ref={materialRef}
+        vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
+        fragmentShader={topologyFragment}
+        uniforms={{
+          uTime: { value: 0 },
+          uTexture: { value: texture },
+          uThickness: { value: 0.15 },
+          uAmplitude: { value: 0.12 },
+          uSpeed: { value: 1 },
+          uAudio: { value: 0 },
+          uLiquify: { value: 0.5 },
+          uColor1: { value: new THREE.Color(baseColor) },
+          uColor2: { value: new THREE.Color(secondaryColor) },
+          uFrequency: { value: 20 },
+          uAspect: { value: size.width / Math.max(size.height, 1) },
         }}
         transparent={false}
         depthWrite={false}
@@ -614,7 +892,7 @@ function PulseScene() {
 
   useFrame((state) => {
     if(!matRef.current) return;
-    const { bass, treble, beat } = audioEngine.current;
+    const { bass, treble, beat } = getReactiveAudio();
     matRef.current.uniforms.uTime.value = state.clock.elapsedTime;
     matRef.current.uniforms.uBass.value = bass;
     matRef.current.uniforms.uBeat.value = beat;
@@ -643,641 +921,284 @@ function PulseScene() {
   );
 }
 
-const spectrumVertex = `
-  varying vec3 vWorldPosition;
+const glassTextVertex = `
   varying vec2 vUv;
   void main() {
     vUv = uv;
-    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-    vWorldPosition = worldPosition.xyz;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-const spectrumFragment = `
-  uniform vec3 uBaseColor;
-  uniform vec3 uAccentColor;
-  uniform float uEnergy;
-  varying vec3 vWorldPosition;
-  varying vec2 vUv;
-
-  void main() {
-    float verticalFade = smoothstep(-0.6, 1.0, vUv.y);
-    float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
-    vec3 color = mix(uBaseColor * 0.45, uAccentColor, verticalFade);
-    color += uBaseColor * pow(verticalFade, 3.0) * (0.6 + uEnergy);
-    gl_FragColor = vec4(color, edge * (0.72 + uEnergy * 0.28));
-  }
-`;
-
-function SpectrumScene() {
-  const groupRef = useRef<THREE.Group>(null);
-  const floorRef = useRef<THREE.ShaderMaterial>(null);
-  const { baseColor, secondaryColor, speed } = useStore();
-
-  const bars = useMemo(() => {
-    const items: Array<{ x: number; z: number; phase: number; band: number }> = [];
-    const columns = 17;
-    const rows = 9;
-    for (let x = 0; x < columns; x++) {
-      for (let z = 0; z < rows; z++) {
-        items.push({
-          x: (x - (columns - 1) / 2) * 0.62,
-          z: (z - (rows - 1) / 2) * 0.66,
-          phase: x * 0.35 + z * 0.52,
-          band: (x / (columns - 1) + z / (rows - 1)) * 0.5
-        });
-      }
-    }
-    return items;
-  }, []);
-
-  useFrame((state) => {
-    if (!groupRef.current) return;
-    const { subBass, bass, mid, highMid, treble, energy, beat } = audioEngine.current;
-    const levels = [subBass, bass, mid, highMid, treble];
-    const time = state.clock.elapsedTime * speed;
-
-    groupRef.current.rotation.y = Math.sin(time * 0.25) * 0.18;
-    groupRef.current.position.y = -0.95 - beat * 0.12;
-
-    groupRef.current.children.forEach((child, index) => {
-      const mesh = child as THREE.Mesh;
-      const config = bars[index];
-      const bandIndex = Math.min(levels.length - 1, Math.floor(config.band * levels.length));
-      const band = levels[bandIndex] || 0;
-      const ripple = Math.sin(time * 2.4 + config.phase) * 0.24 + 0.76;
-      const height = 0.18 + band * 4.6 + energy * 0.75 * ripple + beat * 1.3;
-      mesh.scale.y += (height - mesh.scale.y) * 0.24;
-      mesh.position.y = mesh.scale.y * 0.5;
-      mesh.rotation.y = Math.sin(time + config.phase) * 0.12 * energy;
-
-      const mat = mesh.material as THREE.ShaderMaterial;
-      mat.uniforms.uBaseColor.value.set(baseColor);
-      mat.uniforms.uAccentColor.value.set(secondaryColor);
-      mat.uniforms.uEnergy.value = energy;
-    });
-
-    if (floorRef.current) {
-      floorRef.current.uniforms.uTime.value = time;
-      floorRef.current.uniforms.uEnergy.value = energy;
-      floorRef.current.uniforms.uColor.value.set(baseColor);
-    }
-  });
-
-  return (
-    <group>
-      <mesh position={[0, -1.08, -1.5]} rotation={[-Math.PI / 2, 0, 0]} scale={[18, 14, 1]}>
-        <planeGeometry args={[1, 1, 1, 1]} />
-        <shaderMaterial
-          ref={floorRef}
-          vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
-          fragmentShader={`
-            uniform float uTime;
-            uniform float uEnergy;
-            uniform vec3 uColor;
-            varying vec2 vUv;
-            void main() {
-              vec2 p = vUv * 2.0 - 1.0;
-              float grid = max(smoothstep(0.97, 1.0, abs(sin((p.x + uTime * 0.04) * 28.0))), smoothstep(0.97, 1.0, abs(sin((p.y - uTime * 0.08) * 22.0))));
-              float fade = smoothstep(1.4, 0.1, length(p));
-              gl_FragColor = vec4(uColor * grid * fade * (0.22 + uEnergy * 0.55), grid * fade);
-            }
-          `}
-          uniforms={{
-            uTime: { value: 0 },
-            uEnergy: { value: 0 },
-            uColor: { value: new THREE.Color() }
-          }}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      <group ref={groupRef} position={[0, -0.95, -2.2]}>
-        {bars.map((bar, index) => (
-          <mesh key={`${bar.x}-${bar.z}-${index}`} position={[bar.x, 0.1, bar.z]}>
-            <boxGeometry args={[0.34, 1, 0.34]} />
-            <shaderMaterial
-              vertexShader={spectrumVertex}
-              fragmentShader={spectrumFragment}
-              uniforms={{
-                uBaseColor: { value: new THREE.Color(baseColor) },
-                uAccentColor: { value: new THREE.Color(secondaryColor) },
-                uEnergy: { value: 0 }
-              }}
-              transparent
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-        ))}
-      </group>
-    </group>
-  );
-}
-
-const kaleidoFragment = `
+const glassTextFragment = `
+  uniform sampler2D uText;
   uniform float uTime;
-  uniform float uBass;
-  uniform float uMid;
-  uniform float uTreble;
   uniform float uEnergy;
-  uniform vec3 uBaseColor;
-  uniform vec3 uSecondaryColor;
-  uniform vec3 uAccentColor;
+  uniform float uBeat;
+  uniform float uBass;
+  uniform float uChaos;
+  uniform float uFlowTime;
+  uniform float uPaintTime;
+  uniform vec2 uGlassMotion;
   varying vec2 vUv;
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
   }
 
-  void main() {
-    vec2 p = vUv * 2.0 - 1.0;
-    p.x *= 1.78;
-    float radius = length(p);
-    float angle = atan(p.y, p.x);
-    float slices = 8.0 + floor(uBass * 8.0);
-    float folded = abs(mod(angle + uTime * (0.15 + uTreble * 0.6), 6.283185 / slices) - 3.141592 / slices);
-    vec2 k = vec2(cos(folded), sin(folded)) * radius;
-
-    float rings = sin(radius * (20.0 + uBass * 18.0) - uTime * 4.0);
-    float spokes = sin(k.x * 22.0 + uTime * 2.0) * sin(k.y * 18.0 - uTime * 1.6);
-    float cells = smoothstep(0.42, 0.96, rings * 0.5 + spokes * 0.5 + uMid * 0.45);
-    float petals = smoothstep(0.65, 0.1, abs(sin(folded * slices * 0.5 + radius * 7.0 - uTime)));
-    float sparkle = step(0.985 - uTreble * 0.04, hash(floor(k * 24.0 + uTime * 3.0)));
-
-    vec3 color = mix(uBaseColor * 0.08, uSecondaryColor, cells);
-    color = mix(color, uBaseColor, petals * (0.25 + uEnergy * 0.55));
-    color += uAccentColor * sparkle * (0.5 + uTreble * 1.8);
-    color *= smoothstep(1.35, 0.05, radius);
-    color += uBaseColor * pow(max(0.0, 1.0 - radius), 4.0) * (0.5 + uBass);
-
-    gl_FragColor = vec4(color, 1.0);
-  }
-`;
-
-function KaleidoScene() {
-  const matRef = useRef<THREE.ShaderMaterial>(null);
-  const { baseColor, secondaryColor, accentColor, speed } = useStore();
-
-  useFrame((state) => {
-    if (!matRef.current) return;
-    const { bass, mid, treble, energy } = audioEngine.current;
-    matRef.current.uniforms.uTime.value = state.clock.elapsedTime * speed;
-    matRef.current.uniforms.uBass.value = bass;
-    matRef.current.uniforms.uMid.value = mid;
-    matRef.current.uniforms.uTreble.value = treble;
-    matRef.current.uniforms.uEnergy.value = energy;
-    matRef.current.uniforms.uBaseColor.value.set(baseColor);
-    matRef.current.uniforms.uSecondaryColor.value.set(secondaryColor);
-    matRef.current.uniforms.uAccentColor.value.set(accentColor);
-  });
-
-  return (
-    <mesh position={[0, 0, -2]}>
-      <planeGeometry args={[24, 14]} />
-      <shaderMaterial
-        ref={matRef}
-        vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
-        fragmentShader={kaleidoFragment}
-        uniforms={{
-          uTime: { value: 0 },
-          uBass: { value: 0 },
-          uMid: { value: 0 },
-          uTreble: { value: 0 },
-          uEnergy: { value: 0 },
-          uBaseColor: { value: new THREE.Color(baseColor) },
-          uSecondaryColor: { value: new THREE.Color(secondaryColor) },
-          uAccentColor: { value: new THREE.Color(accentColor) }
-        }}
-        depthWrite={false}
-      />
-    </mesh>
-  );
-}
-
-const tunnelFragment = `
-  uniform float uTime;
-  uniform float uBass;
-  uniform float uMid;
-  uniform float uTreble;
-  uniform float uEnergy;
-  uniform vec3 uBaseColor;
-  uniform vec3 uSecondaryColor;
-  uniform vec3 uAccentColor;
-  varying vec2 vUv;
-
-  float hash(float n) {
-    return fract(sin(n) * 43758.5453123);
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
   }
 
-  void main() {
-    vec2 p = vUv * 2.0 - 1.0;
-    p.x *= 1.78;
-    float r = max(length(p), 0.001);
-    float a = atan(p.y, p.x);
-
-    float twist = sin(r * 5.0 - uTime * 1.3) * (0.25 + uMid * 0.6);
-    float tunnel = 1.0 / r + uTime * (0.7 + uBass * 1.8);
-    float bands = smoothstep(0.68, 0.98, abs(sin(tunnel * 2.8 + twist)));
-    float ribs = smoothstep(0.88, 1.0, abs(sin(a * (10.0 + floor(uTreble * 12.0)) + tunnel)));
-    float sparks = step(0.986 - uTreble * 0.035, hash(floor(a * 38.0) + floor(tunnel * 8.0)));
-
-    vec3 color = mix(uBaseColor * 0.08, uSecondaryColor, bands);
-    color += uBaseColor * ribs * (0.45 + uEnergy);
-    color += uAccentColor * sparks * (0.6 + uTreble * 2.2);
-    color *= smoothstep(1.25, 0.12, r);
-    color += uBaseColor * pow(max(0.0, 0.18 - r) * 5.0, 2.0) * (1.0 + uBass * 2.5);
-
-    gl_FragColor = vec4(color, 1.0);
-  }
-`;
-
-function TunnelScene() {
-  const matRef = useRef<THREE.ShaderMaterial>(null);
-  const { baseColor, secondaryColor, accentColor, speed } = useStore();
-
-  useFrame((state) => {
-    if (!matRef.current) return;
-    const { bass, mid, treble, energy } = audioEngine.current;
-    matRef.current.uniforms.uTime.value = state.clock.elapsedTime * speed;
-    matRef.current.uniforms.uBass.value = bass;
-    matRef.current.uniforms.uMid.value = mid;
-    matRef.current.uniforms.uTreble.value = treble;
-    matRef.current.uniforms.uEnergy.value = energy;
-    matRef.current.uniforms.uBaseColor.value.set(baseColor);
-    matRef.current.uniforms.uSecondaryColor.value.set(secondaryColor);
-    matRef.current.uniforms.uAccentColor.value.set(accentColor);
-  });
-
-  return (
-    <mesh position={[0, 0, -2]}>
-      <planeGeometry args={[24, 14]} />
-      <shaderMaterial
-        ref={matRef}
-        vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
-        fragmentShader={tunnelFragment}
-        uniforms={{
-          uTime: { value: 0 },
-          uBass: { value: 0 },
-          uMid: { value: 0 },
-          uTreble: { value: 0 },
-          uEnergy: { value: 0 },
-          uBaseColor: { value: new THREE.Color(baseColor) },
-          uSecondaryColor: { value: new THREE.Color(secondaryColor) },
-          uAccentColor: { value: new THREE.Color(accentColor) }
-        }}
-        depthWrite={false}
-      />
-    </mesh>
-  );
-}
-
-function WaveTerrainScene() {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const matRef = useRef<THREE.MeshStandardMaterial>(null);
-  const { baseColor, secondaryColor, speed } = useStore();
-
-  useFrame((state) => {
-    if (!meshRef.current || !matRef.current) return;
-    const { subBass, bass, mid, highMid, treble, energy, beat } = audioEngine.current;
-    const time = state.clock.elapsedTime * speed;
-    const geometry = meshRef.current.geometry as THREE.PlaneGeometry;
-    const position = geometry.attributes.position as THREE.BufferAttribute;
-
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i);
-      const y = position.getY(i);
-      const distance = Math.sqrt(x * x + y * y);
-      const ridge = Math.sin(x * 1.4 + time * 2.0) * bass;
-      const cross = Math.cos(y * 1.9 - time * 1.4) * mid;
-      const ring = Math.sin(distance * (2.0 + highMid * 2.5) - time * 3.2) * (0.2 + subBass);
-      const shimmer = Math.sin((x + y) * 6.0 + time * 8.0) * treble * 0.15;
-      position.setZ(i, (ridge + cross + ring + shimmer) * (0.5 + energy) + beat * 0.4);
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      v += a * noise(p);
+      p = p * 2.03 + 17.13;
+      a *= 0.5;
     }
-
-    position.needsUpdate = true;
-    geometry.computeVertexNormals();
-    meshRef.current.rotation.z = Math.sin(time * 0.12) * 0.08;
-    matRef.current.color.set(baseColor);
-    matRef.current.emissive.set(secondaryColor);
-    matRef.current.emissiveIntensity = 0.35 + energy * 1.4;
-    matRef.current.wireframe = true;
-  });
-
-  return (
-    <group position={[0, -1.1, -4]} rotation={[-Math.PI / 2.6, 0, 0]}>
-      <ambientLight intensity={0.5} />
-      <pointLight position={[0, 4, 3]} intensity={8} color={baseColor} />
-      <mesh ref={meshRef}>
-        <planeGeometry args={[16, 12, 80, 58]} />
-        <meshStandardMaterial ref={matRef} color={baseColor} emissive={secondaryColor} metalness={0.4} roughness={0.28} />
-      </mesh>
-    </group>
-  );
-}
-
-function CrystalScene() {
-  const groupRef = useRef<THREE.Group>(null);
-  const { baseColor, secondaryColor, accentColor, speed } = useStore();
-
-  const crystals = useMemo(() => {
-    return new Array(42).fill(0).map((_, index) => {
-      const ring = Math.floor(index / 7) + 1;
-      const angle = index * 2.399;
-      return {
-        x: Math.cos(angle) * ring * 0.36,
-        y: Math.sin(angle) * ring * 0.24,
-        z: -ring * 0.14,
-        rot: angle,
-        scale: 0.45 + (index % 7) * 0.08
-      };
-    });
-  }, []);
-
-  useFrame((state) => {
-    if (!groupRef.current) return;
-    const { bass, mid, treble, energy, beat } = audioEngine.current;
-    const time = state.clock.elapsedTime * speed;
-    groupRef.current.rotation.y = time * 0.18;
-    groupRef.current.rotation.z = Math.sin(time * 0.3) * 0.2;
-
-    groupRef.current.children.forEach((child, index) => {
-      const mesh = child as THREE.Mesh;
-      const pulse = 1 + bass * 0.5 + beat * 0.7 + Math.sin(time * 2.0 + index) * mid * 0.18;
-      mesh.scale.setScalar(crystals[index].scale * pulse);
-      mesh.rotation.x = time * (0.35 + index * 0.01) + crystals[index].rot;
-      mesh.rotation.y = time * (0.25 + treble * 0.8) + index;
-      const material = mesh.material as THREE.MeshStandardMaterial;
-      material.color.set(index % 3 === 0 ? baseColor : index % 3 === 1 ? secondaryColor : accentColor);
-      material.emissive.copy(material.color);
-      material.emissiveIntensity = 0.35 + energy * 1.3 + beat;
-    });
-  });
-
-  return (
-    <group>
-      <ambientLight intensity={0.4} />
-      <pointLight position={[3, 3, 4]} intensity={16} color={baseColor} />
-      <pointLight position={[-4, -2, 2]} intensity={10} color={secondaryColor} />
-      <group ref={groupRef} position={[0, 0, -1.7]}>
-        {crystals.map((crystal, index) => (
-          <mesh key={index} position={[crystal.x, crystal.y, crystal.z]} rotation={[crystal.rot, crystal.rot * 0.4, crystal.rot * 0.2]}>
-            <octahedronGeometry args={[1, 1]} />
-            <meshStandardMaterial transparent opacity={0.72} metalness={0.15} roughness={0.12} />
-          </mesh>
-        ))}
-      </group>
-    </group>
-  );
-}
-
-const signalBloomFragment = `
-  uniform float uTime;
-  uniform float uBass;
-  uniform float uMid;
-  uniform float uTreble;
-  uniform float uEnergy;
-  uniform vec3 uBaseColor;
-  uniform vec3 uSecondaryColor;
-  uniform vec3 uAccentColor;
-  varying vec2 vUv;
-
-  float hash(float n) {
-    return fract(sin(n) * 43758.5453123);
+    return v;
   }
 
-  float hash2(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-  }
-
-  float sdEllipse(vec2 p, vec2 r) {
-    return length(p / r) - 1.0;
-  }
-
-  float softBlob(vec2 p, vec2 center, vec2 radius, float angle) {
-    float s = sin(angle);
-    float c = cos(angle);
-    p -= center;
-    p = mat2(c, -s, s, c) * p;
-    p.x += sin(p.y * 18.0 + uTime * 1.3) * 0.018 * (1.0 + uEnergy);
-    p.y += sin(p.x * 14.0 - uTime * 1.1) * 0.014 * (1.0 + uBass);
-    return sdEllipse(p, radius);
+  vec4 sampleText(vec2 uv) {
+    vec4 tex = texture2D(uText, uv);
+    return vec4(vec3(tex.r), max(tex.a, tex.r));
   }
 
   void main() {
     vec2 uv = vUv;
-    vec2 p = uv * 2.0 - 1.0;
-    p.x *= 1.78;
+    vec2 motionUv = uv + uGlassMotion * (0.018 + uBass * 0.018 + uBeat * 0.012);
+    vec2 aspectUv = vec2(motionUv.x, motionUv.y * 1.18);
+    vec2 grid = vec2(11.0, 7.0);
+    vec2 tile = floor(aspectUv * grid);
+    vec2 cell = fract(aspectUv * grid);
+    vec2 center = cell - 0.5;
 
-    float time = uTime * 0.6;
-    float d = 10.0;
-    d = min(d, softBlob(p, vec2(-0.82 + sin(time) * 0.06, 0.38), vec2(0.34 + uBass * 0.08, 0.16), -0.12));
-    d = min(d, softBlob(p, vec2(0.08, 0.34 + sin(time * 0.9) * 0.04), vec2(0.42 + uMid * 0.08, 0.34), 0.24));
-    d = min(d, softBlob(p, vec2(-0.08, -0.38), vec2(0.50 + uBass * 0.1, 0.14), -0.06));
-    d = min(d, softBlob(p, vec2(0.86 + cos(time * 0.7) * 0.05, -0.34), vec2(0.34 + uMid * 0.05, 0.16), 0.08));
-    d = min(d, softBlob(p, vec2(0.55, 0.27), vec2(0.22, 0.11 + uTreble * 0.04), -0.18));
+    float id = hash(tile);
+    float id2 = hash(tile + 19.37);
+    float id3 = hash(tile + 51.91);
+    float t = uTime * (0.35 + id * 0.22);
+    vec2 tileMotion = vec2(
+      sin(uTime * (0.7 + id * 0.4) + id2 * 6.283),
+      cos(uTime * (0.62 + id3 * 0.38) - id * 6.283)
+    ) * (uEnergy * 0.055 + uBass * 0.045 + uBeat * 0.035);
+    center += tileMotion;
+    float roundedBox = max(abs(center.x), abs(center.y));
+    float edge = smoothstep(0.49, 0.43, roundedBox);
+    float border = 1.0 - smoothstep(0.42, 0.49, roundedBox);
 
-    float fill = smoothstep(0.025, -0.03, d);
-    float halo = exp(-max(d, 0.0) * (5.0 - uBass * 1.5));
-    float hotEdge = smoothstep(0.055, 0.0, abs(d));
+    float swirl = sin(center.x * (7.0 + id * 10.0) + t + id2 * 6.283)
+                * cos(center.y * (8.0 + id3 * 9.0) - t * 1.3);
+    float localNoise = noise(tile * 1.7 + cell * (2.0 + id * 3.0) + uTime * 0.06);
+    vec2 lens = normalize(center + 0.001) * (0.018 + id * 0.045);
+    lens += vec2(swirl, localNoise - 0.5) * (0.035 + uEnergy * 0.06 + uBass * 0.05);
+    lens += center * (0.05 + id2 * 0.09 + uBeat * 0.06);
 
-    vec3 ember = mix(vec3(0.72, 0.33, 0.08), uBaseColor, 0.72);
-    vec3 red = mix(vec3(1.0, 0.0, 0.02), uSecondaryColor, 0.68);
-    vec3 whiteHot = mix(vec3(1.0), uAccentColor, 0.55);
+    vec2 seamWarp = vec2(
+      sin(tile.y * 1.73 + uTime * 0.2),
+      cos(tile.x * 1.47 - uTime * 0.16)
+    ) * (0.008 + uChaos * 0.018);
+    vec2 refractedUv = uv + (lens + seamWarp) * edge;
+    vec4 textBehind = sampleText(refractedUv);
+    vec4 textGhost = sampleText(uv + vec2(localNoise - 0.5, swirl) * 0.012);
 
-    float row = floor((uv.y + uTime * 0.03) * 88.0);
-    float rowNoise = hash(row + floor(uTime * 9.0));
-    float broken = step(0.68 - uEnergy * 0.28, rowNoise);
-    float segment = step(0.45, hash(floor(uv.x * 34.0) + row * 7.0));
-    float redScan = broken * segment * smoothstep(0.985, 1.0, abs(sin((uv.y + uTime * 0.035) * 280.0)));
-    redScan *= smoothstep(0.05, -0.02, d + 0.02);
+    vec3 bg = vec3(0.018, 0.018, 0.02);
+    vec3 textColor = vec3(0.82, 0.82, 0.8) * textBehind.a;
+    textColor += vec3(0.24) * textGhost.a * (1.0 - edge);
 
-    float slitA = smoothstep(0.018, 0.0, abs(p.y - 0.43 - sin(p.x * 12.0 + time) * 0.01)) * smoothstep(0.28, 0.0, abs(p.x - 0.08));
-    float slitB = smoothstep(0.014, 0.0, abs(p.y + 0.37 - sin(p.x * 10.0 - time) * 0.012)) * smoothstep(0.48, 0.0, abs(p.x + 0.02));
-    float slitC = smoothstep(0.012, 0.0, abs(p.y + 0.31)) * smoothstep(0.18, 0.0, abs(p.x - 0.85));
-    float slits = max(max(slitA, slitB), slitC) * fill;
+    float grey = mix(0.2, 0.76, id);
+    grey += (localNoise - 0.5) * 0.18;
+    grey += uEnergy * 0.08 + uBeat * 0.08;
+    vec3 glass = vec3(grey);
 
-    float smear = 0.0;
-    for (float i = 1.0; i < 8.0; i += 1.0) {
-      float trailX = uv.x - i * 0.012 * (1.0 + uBass);
-      smear += smoothstep(0.985, 1.0, abs(sin((trailX + uv.y * 0.11 + uTime * 0.09) * 120.0 + i))) / i;
-    }
-    smear *= fill * (0.12 + uTreble * 0.35);
+    float innerShade = smoothstep(0.0, 0.55, length(center));
+    float whiteCore = smoothstep(0.45, 0.02, length(center * vec2(1.05, 0.86)));
+    float highlight = smoothstep(0.055, 0.0, abs(center.x - 0.18 - id * 0.18))
+                    + smoothstep(0.055, 0.0, abs(center.y - 0.28 + id2 * 0.16));
+    highlight *= 0.16 + id3 * 0.26;
 
-    float staticNoise = (hash2(floor(uv * vec2(360.0, 190.0)) + uTime) - 0.5) * 0.035 * (1.0 + uEnergy);
-    float vignette = smoothstep(1.25, 0.18, length(p));
+    vec3 neonA = 0.5 + 0.5 * cos(vec3(0.0, 2.1, 4.2) + uFlowTime * 1.2 + id * 6.283);
+    vec3 neonB = 0.5 + 0.5 * cos(vec3(3.1, 0.8, 5.4) + uTime * 2.0 - id2 * 6.283 + swirl * 2.5);
+    vec3 neon = mix(neonA, neonB, 0.45 + 0.35 * sin(uTime + id3 * 6.283));
 
-    vec3 color = vec3(0.0);
-    color += ember * fill * (0.9 + uBass * 0.5);
-    color += ember * halo * (0.42 + uEnergy * 0.42);
-    color += red * hotEdge * (0.45 + uTreble);
-    color += red * redScan * (1.4 + uEnergy * 2.2);
-    color += red * smear;
-    color += whiteHot * slits * (1.2 + uTreble * 1.8);
-    color += staticNoise;
-    color *= vignette;
+    vec2 paintUv = center * (2.4 + id * 2.2);
+    paintUv += vec2(
+      sin(uPaintTime * (0.42 + id * 0.18) + id2 * 6.283),
+      cos(uPaintTime * (0.34 + id3 * 0.2) - id * 6.283)
+    );
+    float paintA = noise(paintUv + vec2(uPaintTime * 0.18, -uPaintTime * 0.11));
+    float paintB = noise(paintUv * 1.9 + vec2(-uPaintTime * 0.09, uPaintTime * 0.16) + tile * 0.23);
+    float paintMask = smoothstep(0.32, 0.86, paintA * 0.68 + paintB * 0.5);
+    paintMask *= smoothstep(0.52, 0.12, length(center));
+    vec3 paintColor = 0.5 + 0.5 * cos(vec3(0.2, 2.4, 4.7) + paintA * 5.8 + paintB * 2.4 + id * 6.283);
 
-    gl_FragColor = vec4(color, 1.0);
+    float edgeGlow = smoothstep(0.24, 0.5, roundedBox) * edge;
+    float gapX = min(cell.x, 1.0 - cell.x);
+    float gapY = min(cell.y, 1.0 - cell.y);
+    float seamDistance = min(gapX, gapY);
+    float seam = smoothstep(0.025, 0.0, seamDistance);
+    float verticalSeam = smoothstep(0.026, 0.0, gapX);
+    float horizontalSeam = smoothstep(0.026, 0.0, gapY);
+    float verticalFlow = smoothstep(0.12, 0.0, abs(fract(cell.y * 3.2 + tile.x * 0.13 - uFlowTime * (0.85 + id * 0.8)) - 0.5));
+    float horizontalFlow = smoothstep(0.12, 0.0, abs(fract(cell.x * 3.2 + tile.y * 0.17 + uFlowTime * (0.72 + id2 * 0.9)) - 0.5));
+    float seamFlow = max(verticalSeam * verticalFlow, horizontalSeam * horizontalFlow);
+    float seamSpark = seam * smoothstep(0.7, 1.0, noise(tile * 2.1 + vec2(uFlowTime * 0.8, -uFlowTime * 0.55)));
+
+    vec3 col = bg;
+    col += textColor * (0.55 + edge * 0.85);
+    col = mix(col, glass, 0.34 * edge);
+    col += paintColor * paintMask * edge * (0.18 + uEnergy * 0.16);
+    col = mix(col, vec3(1.0), whiteCore * 0.42 * edge);
+    col += neon * edgeGlow * 0.12;
+    col += neon * seamFlow * (0.92 + uBeat * 0.75);
+    col += vec3(1.0) * seamFlow * 0.32;
+    col += neon * seamSpark * (0.24 + uEnergy * 0.5);
+    col += vec3(0.18) * innerShade * edge;
+    col += vec3(0.55) * highlight * edge;
+    col -= vec3(0.12) * seam;
+    col += vec3(0.18) * border * edge;
+
+    float vignette = smoothstep(0.95, 0.25, length(uv - 0.5));
+    col *= 0.72 + vignette * 0.5;
+
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-function SignalBloomScene() {
-  const matRef = useRef<THREE.ShaderMaterial>(null);
-  const { baseColor, secondaryColor, accentColor, speed } = useStore();
+const foregroundRippleTextFragment = `
+  uniform sampler2D uText;
+  uniform float uTime;
+  uniform float uEnergy;
+  uniform float uBeat;
+  uniform vec3 uTextColor;
+  varying vec2 vUv;
 
-  useFrame((state) => {
-    if (!matRef.current) return;
-    const { bass, mid, treble, energy } = audioEngine.current;
-    matRef.current.uniforms.uTime.value = state.clock.elapsedTime * speed;
-    matRef.current.uniforms.uBass.value = bass;
-    matRef.current.uniforms.uMid.value = mid;
-    matRef.current.uniforms.uTreble.value = treble;
-    matRef.current.uniforms.uEnergy.value = energy;
-    matRef.current.uniforms.uBaseColor.value.set(baseColor);
-    matRef.current.uniforms.uSecondaryColor.value.set(secondaryColor);
-    matRef.current.uniforms.uAccentColor.value.set(accentColor);
-  });
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+  }
 
-  return (
-    <mesh position={[0, 0, -2]}>
-      <planeGeometry args={[24, 14]} />
-      <shaderMaterial
-        ref={matRef}
-        vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
-        fragmentShader={signalBloomFragment}
-        uniforms={{
-          uTime: { value: 0 },
-          uBass: { value: 0 },
-          uMid: { value: 0 },
-          uTreble: { value: 0 },
-          uEnergy: { value: 0 },
-          uBaseColor: { value: new THREE.Color(baseColor) },
-          uSecondaryColor: { value: new THREE.Color(secondaryColor) },
-          uAccentColor: { value: new THREE.Color(accentColor) }
-        }}
-        depthWrite={false}
-      />
-    </mesh>
-  );
-}
+  void main() {
+    vec2 uv = vUv;
+    vec2 center = uv - 0.5;
+    float wave = sin((uv.y * 18.0 + center.x * 4.0) - uTime * (2.4 + uEnergy * 2.2));
+    float ripple = sin(length(center * vec2(1.45, 0.9)) * 42.0 - uTime * (4.0 + uBeat * 3.0));
+    float slice = floor(uv.y * 42.0);
+    float jitter = (hash(vec2(slice, floor(uTime * 16.0))) - 0.5) * 0.018 * (0.35 + uEnergy + uBeat);
+    vec2 scanUv = uv + vec2((wave * 0.012 + ripple * 0.008 + jitter), 0.0);
 
-const TRAIL_COUNT = 12;
+    vec4 text = texture2D(uText, scanUv);
+    float mask = max(text.r, text.a);
+    float scanLine = smoothstep(0.0, 0.04, abs(fract(uv.y * 18.0 - uTime * (0.9 + uEnergy)) - 0.5));
+    float edgeNoise = hash(floor(uv * vec2(420.0, 210.0)) + floor(uTime * 8.0));
+    float grain = step(0.965 - uEnergy * 0.04, edgeNoise);
 
-function DumbarScene() {
-  const { textInput, textFontSize, textLetterSpacing } = useStore();
-  const groupRef = useRef<THREE.Group>(null);
-  const bgMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  
-  const historyRef = useRef<any[]>(Array(TRAIL_COUNT).fill(null).map(() => ({ x:0, y:0, scaleX:1, scaleY:1, rotZ:0 })));
-  
-  const targetState = useRef({ 
-    bg: new THREE.Color('#020202'), 
-    fg: new THREE.Color('#ffffff'), 
-    out: new THREE.Color('#333333'),
-    outlineWidth: 0.05
-  });
+    vec3 uvA = vec3(uv.x, uv.y, uv.x);
+    vec3 uvB = vec3(uv.y, uv.x, uv.y);
+    vec3 neonA = 0.5 + 0.5 * cos(vec3(0.0, 2.2, 4.4) + uTime * 1.8 + uvA * vec3(8.0, 5.0, 7.0));
+    vec3 neonB = 0.5 + 0.5 * cos(vec3(3.1, 0.7, 5.2) - uTime * 1.25 + ripple * 2.2 + uvB * vec3(6.0, 9.0, 4.0));
+    vec3 neon = mix(neonA, neonB, 0.45 + 0.35 * wave);
+    neon = mix(uTextColor, neon, 0.62);
+    vec3 hotCore = mix(uTextColor, neon, 0.72);
+    vec3 core = hotCore * mask * (0.9 + uEnergy * 0.24);
+    vec3 glow = neon * mask * (0.42 + uEnergy * 0.55 + uBeat * 0.55);
+    vec3 scan = mix(vec3(1.0), neon, 0.82) * mask * (1.0 - scanLine) * 0.55;
+    vec3 col = core + glow + scan + neon * grain * mask * 0.45;
+    float alpha = clamp(mask * (0.7 + uEnergy * 0.28) + grain * mask * 0.25, 0.0, 1.0);
 
-  useFrame((state) => {
-    if(!groupRef.current) return;
-    const { bass, treble, beat, energy, subBass, highMid } = audioEngine.current;
-    
-    // Dynamic theme colors inspired by Google Sans Flex / Studio Dumbar
-    if (energy > 0.7 && beat > 0.4) {
-      targetState.current.bg.set('#00ff3c'); // Intense Green
-      targetState.current.fg.set('#000000'); // Black core
-      targetState.current.out.set('#ffffff'); // White outline glow
-      targetState.current.outlineWidth = 0.15;
-    } else if (bass > 0.5 || subBass > 0.5) {
-      targetState.current.bg.set('#050000'); // Deep dark pulse
-      targetState.current.fg.set('#ffffff');
-      targetState.current.out.set('#ff003c'); // Red slit-scan trail
-      targetState.current.outlineWidth = 0.08 + (bass * 0.1);
-    } else {
-      targetState.current.bg.set('#050505');
-      targetState.current.fg.set('#ffffff');
-      targetState.current.out.set('#222222');
-      targetState.current.outlineWidth = 0.05;
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
+function RandomGlassBlocksScene() {
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const foregroundTextRef = useRef<THREE.ShaderMaterial>(null);
+  const flowTimeRef = useRef(0);
+  const paintTimeRef = useRef(0);
+  const mouseMotionRef = useRef(new THREE.Vector2(0, 0));
+  const { textInput, textColor, textFontSize, textLetterSpacing, textFontWeight, speed, chaos } = useStore();
+  const displayText = (textInput || 'NEONPULSE').toUpperCase();
+  const textTexture = useCleanTextTexture(displayText, false, textFontSize * 1.25, textLetterSpacing, textFontWeight);
+
+  useFrame((state, delta) => {
+    if (!materialRef.current) return;
+    const { energy, beat, bass } = getReactiveAudio();
+    const uniforms = materialRef.current.uniforms;
+    const tempoDrive = 0.8 + energy * 4.2 + bass * 2.8 + beat * 7.5;
+    flowTimeRef.current += delta * tempoDrive * Math.max(0.35, speed);
+    paintTimeRef.current += delta * (0.55 + energy * 0.7 + bass * 0.45) * Math.max(0.35, speed);
+
+    uniforms.uText.value = textTexture;
+    uniforms.uTime.value = state.clock.elapsedTime * speed;
+    uniforms.uFlowTime.value = flowTimeRef.current;
+    uniforms.uPaintTime.value = paintTimeRef.current;
+    uniforms.uEnergy.value += (energy - uniforms.uEnergy.value) * 0.12;
+    uniforms.uBeat.value += (beat - uniforms.uBeat.value) * 0.2;
+    uniforms.uBass.value += (bass - uniforms.uBass.value) * 0.14;
+    uniforms.uChaos.value = chaos;
+    mouseMotionRef.current.lerp(state.pointer, 0.08);
+    const performanceAmount = 0.75 + chaos * 0.35;
+    const mouseAmount = 0.75 + chaos * 0.25;
+    uniforms.uGlassMotion.value.set(
+      mouseMotionRef.current.x * mouseAmount + Math.sin(state.clock.elapsedTime * 0.9 * speed) * (0.22 + bass * 0.5 + beat * 0.35) * performanceAmount,
+      mouseMotionRef.current.y * mouseAmount + Math.cos(state.clock.elapsedTime * 0.72 * speed) * (0.18 + energy * 0.45 + beat * 0.28) * performanceAmount
+    );
+
+    if (foregroundTextRef.current) {
+      foregroundTextRef.current.uniforms.uText.value = textTexture;
+      foregroundTextRef.current.uniforms.uTime.value = state.clock.elapsedTime * speed;
+      foregroundTextRef.current.uniforms.uEnergy.value += (energy - foregroundTextRef.current.uniforms.uEnergy.value) * 0.14;
+      foregroundTextRef.current.uniforms.uBeat.value += (beat - foregroundTextRef.current.uniforms.uBeat.value) * 0.22;
+      foregroundTextRef.current.uniforms.uTextColor.value.set(textColor);
     }
-    
-    if (bgMatRef.current) {
-       bgMatRef.current.color.lerp(targetState.current.bg, 0.15);
-    }
-    
-    const time = state.clock.elapsedTime;
-    
-    const targetScaleX = 1 + (bass * 2.5) + (energy * 1.5) + (beat * 1.0);
-    const targetScaleY = 1 + (highMid * 1.0) - (subBass * 0.2) + (beat * 0.5);
-    
-    // Kinetic wavy motion
-    const waveDistortionX = Math.sin(time * 5.0) * (energy + bass) * 0.6;
-    const waveDistortionY = Math.cos(time * 3.7) * (energy) * 0.4;
-    const rotZ = Math.sin(time * 2.0) * bass * 0.3;
-    
-    const currentFront = {
-      x: waveDistortionX,
-      y: waveDistortionY,
-      scaleX: targetScaleX,
-      scaleY: targetScaleY,
-      rotZ: rotZ
-    };
-    
-    historyRef.current.unshift(currentFront);
-    historyRef.current.pop();
-    
-    groupRef.current.children.forEach((mesh: any, i: number) => {
-      const hist = historyRef.current[i];
-      if (!hist) return;
-      
-      mesh.position.x += (hist.x - mesh.position.x) * 0.4;
-      mesh.position.y += (hist.y - mesh.position.y) * 0.4;
-      mesh.scale.x += (hist.scaleX - mesh.scale.x) * 0.4;
-      mesh.scale.y += (hist.scaleY - mesh.scale.y) * 0.4;
-      mesh.rotation.z += (hist.rotZ - mesh.rotation.z) * 0.4;
-      
-      mesh.position.z = -i * 0.2; 
-      
-      if (!mesh.color) mesh.color = new THREE.Color();
-      if (!mesh.outlineColor) mesh.outlineColor = new THREE.Color();
-
-      if (i === 0) {
-        mesh.color.lerp(targetState.current.fg, 0.2);
-        mesh.outlineWidth = 0;
-      } else {
-        mesh.color.lerp(targetState.current.bg, 0.2);
-        mesh.outlineColor.lerp(targetState.current.out, 0.2);
-        mesh.outlineWidth = targetState.current.outlineWidth;
-        mesh.fillOpacity = 1.0;
-      }
-
-      if (mesh.sync) mesh.sync();
-    });
   });
-
-  const displayText = (textInput || "YOU").toUpperCase();
 
   return (
     <group>
-      <mesh position={[0,0,-20]}>
-        <planeGeometry args={[100, 100]} />
-        <meshBasicMaterial ref={bgMatRef} color="#000" />
+      <mesh position={[0, 0, -1]}>
+        <planeGeometry args={[24, 13]} />
+        <shaderMaterial
+          ref={materialRef}
+          vertexShader={glassTextVertex}
+          fragmentShader={glassTextFragment}
+          uniforms={{
+            uText: { value: textTexture },
+            uTime: { value: 0 },
+            uEnergy: { value: 0 },
+            uBeat: { value: 0 },
+            uBass: { value: 0 },
+            uChaos: { value: chaos },
+            uFlowTime: { value: 0 },
+            uPaintTime: { value: 0 },
+            uGlassMotion: { value: new THREE.Vector2(0, 0) },
+          }}
+          depthWrite={false}
+        />
       </mesh>
-      
-      <group ref={groupRef} position={[0, 0, 0]}>
-        {new Array(TRAIL_COUNT).fill(0).map((_, i) => (
-           <Text
-             key={i}
-             font="https://fonts.gstatic.com/ea/notosanssc/v1/NotoSansSC-Bold.otf"
-             fontSize={textFontSize}
-             letterSpacing={textLetterSpacing}
-             anchorX="center"
-             anchorY="middle"
-           >
-             {displayText}
-           </Text>
-        ))}
-      </group>
+      <mesh position={[0, 0, 1.2]}>
+        <planeGeometry args={[18, 9]} />
+        <shaderMaterial
+          ref={foregroundTextRef}
+          vertexShader={glassTextVertex}
+          fragmentShader={foregroundRippleTextFragment}
+          uniforms={{
+            uText: { value: textTexture },
+            uTime: { value: 0 },
+            uEnergy: { value: 0 },
+            uBeat: { value: 0 },
+            uTextColor: { value: new THREE.Color(textColor) },
+          }}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
     </group>
   );
 }
@@ -1287,16 +1208,11 @@ function SceneRouter() {
   const { currentScene } = useStore();
   switch(currentScene) {
     case 'Cyber': return <CyberScene />;
+    case 'Topology': return <TopologyScene />;
     case 'Liquid': return <LiquidScene />;
     case 'Pulse': return <PulseScene />;
     case 'Void': return <VoidScene />;
-    case 'Dumbar': return <DumbarScene />;
-    case 'Spectrum': return <SpectrumScene />;
-    case 'Kaleido': return <KaleidoScene />;
-    case 'Tunnel': return <TunnelScene />;
-    case 'Terrain': return <WaveTerrainScene />;
-    case 'Crystal': return <CrystalScene />;
-    case 'SignalBloom': return <SignalBloomScene />;
+    case 'Dumbar': return <RandomGlassBlocksScene />;
     default: return <VoidScene />;
   }
 }
@@ -1355,112 +1271,36 @@ function useCleanTextTexture(text: string, isDumbar: boolean = false, fontSize: 
   return texture;
 }
 
-const liquidTextFragment = `
-  uniform sampler2D tText;
-  uniform float uTime;
-  uniform float uBass;
-  uniform float uLowMid;
-  uniform float uEnergy;
-  uniform float uGlow;
-  uniform vec3 uTextColor;
-  varying vec2 vUv;
-
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-  }
-
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-  }
-
-  float textMask(vec2 uv) {
-    return texture2D(tText, uv).r;
-  }
-
-  void main() {
-    vec2 uv = vUv;
-    float t = uTime * (0.72 + uEnergy * 0.2);
-    float n = noise(uv * 5.5 + vec2(t * 0.22, -t * 0.18));
-    vec2 flow = vec2(
-      sin(uv.y * 10.0 + t * 1.4) + sin((uv.x + uv.y) * 7.0 - t * 0.8),
-      cos(uv.x * 8.0 - t * 1.1) + sin((uv.x - uv.y) * 6.0 + t)
-    );
-    vec2 liquidUv = uv + flow * (0.0035 + uEnergy * 0.007 + uBass * 0.004) + (n - 0.5) * (0.004 + uLowMid * 0.004);
-
-    float mask = textMask(liquidUv);
-    float px = 0.0028 + uBass * 0.0012;
-    float glow = 0.0;
-    glow += textMask(liquidUv + vec2(px, 0.0));
-    glow += textMask(liquidUv - vec2(px, 0.0));
-    glow += textMask(liquidUv + vec2(0.0, px));
-    glow += textMask(liquidUv - vec2(0.0, px));
-    glow += textMask(liquidUv + vec2(px * 2.0, px));
-    glow += textMask(liquidUv - vec2(px * 2.0, -px));
-    glow /= 6.0;
-
-    float edge = max(glow - mask, 0.0);
-    float aura = smoothstep(0.03, 0.7, glow);
-    float inner = smoothstep(0.18, 0.95, mask);
-    float ripple = 0.5 + 0.5 * sin((uv.x + uv.y) * 34.0 - t * 3.2 + n * 2.0);
-
-    vec3 neonYellow = vec3(0.8, 1.0, 0.0);
-    vec3 neonPurple = vec3(0.4, 0.0, 1.0);
-    vec3 acidCyan = vec3(0.35, 1.0, 0.86);
-    vec3 core = mix(uTextColor, vec3(1.0), 0.45);
-    vec3 edgeColor = mix(neonPurple, neonYellow, ripple);
-
-    vec3 color = core * inner * (0.85 + uGlow * 0.15);
-    color += edgeColor * edge * (1.2 + uEnergy * 0.55);
-    color += acidCyan * aura * (0.18 + uBass * 0.2);
-    color += neonPurple * aura * aura * (0.22 + uLowMid * 0.16);
-
-    float alpha = clamp(inner + aura * (0.32 + uGlow * 0.05), 0.0, 0.92);
-    if (alpha < 0.01) discard;
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
-
 // === CINEMATIC TYPOGRAPHY ===
 function VisualText() {
   const textRef = useRef<THREE.Mesh>(null);
-  const liquidTextMaterialRef = useRef<THREE.ShaderMaterial>(null);
-  const liquidTextTimeRef = useRef(0);
-  const liquidTextSpeedRef = useRef(0.14);
-  const { currentScene, textInput, textAnimStyle, textGlow, textSpeed, textReactive, baseColor, textFontSize, textLetterSpacing, textFontWeight } = useStore();
+  const { currentScene, textInput, textAnimStyle, textGlow, textSpeed, textReactive, textColor, textFontSize, textLetterSpacing, textFontWeight } = useStore();
 
   const displayText = (textInput || " ").toUpperCase();
   const tex = useCleanTextTexture(displayText, false, textFontSize, textLetterSpacing, textFontWeight);
 
-  useFrame((state, delta) => {
+  useFrame((state) => {
     if(!textRef.current) return;
-    const { bass, lowMid, treble, beat, energy } = audioEngine.current;
-    const transient = beat;
+    const { bass, treble, beat, spectralFlux, transient, spectralCentroid } = getReactiveAudio();
     const t = state.clock.elapsedTime * textSpeed;
-    const react = bass * textReactive + (beat * 0.5 * textReactive);
+    const react = (bass + spectralFlux * 0.65 + transient * 0.35) * textReactive + (beat * 0.38 * textReactive);
 
     if(textAnimStyle === 'Cinematic') {
       textRef.current.scale.setScalar(1 + react * 0.2);
-      textRef.current.position.y = Math.sin(t) * 0.2;
+      textRef.current.position.y = Math.sin(t * (1 + spectralCentroid * 0.9)) * (0.2 + treble * 0.12);
       textRef.current.rotation.set(0,0,0);
     } else if (textAnimStyle === 'Glitch') {
       textRef.current.scale.setScalar(1 + react);
       textRef.current.rotation.set(0,0,0);
       if(Math.random() > 0.8 || beat > 0.5) {
-        textRef.current.position.x = (Math.random()-0.5)*0.5 * react;
+        textRef.current.position.x = (Math.random()-0.5) * (0.5 + spectralFlux) * react;
       } else {
         textRef.current.position.x = 0;
       }
     } else if (textAnimStyle === 'Beat') {
       textRef.current.scale.setScalar(1.5 + (react * 1.5) + (beat * 1.0));
       textRef.current.position.set(0, 0, 1 + bass * 2.0);
-      textRef.current.rotation.z = Math.sin(t * 10.0) * 0.05 * beat;
+      textRef.current.rotation.z = Math.sin(t * (10.0 + spectralCentroid * 10.0)) * 0.05 * (beat + transient);
     } else if (textAnimStyle === 'Floating') {
       textRef.current.rotation.z = Math.sin(t * 0.5) * 0.1;
       textRef.current.position.y = Math.sin(t) * 0.5;
@@ -1476,78 +1316,49 @@ function VisualText() {
     // Adjust material properties dynamically if needed
     const mat = textRef.current.material as THREE.MeshBasicMaterial;
     if(mat && mat.color) {
-       mat.color.set(baseColor);
-       mat.color.multiplyScalar(textGlow + beat * 2.0);
-    }
-
-    if (liquidTextMaterialRef.current) {
-      const targetSpeed = 0.09 + energy * 0.32 + bass * 0.42 + lowMid * 0.18 + beat * 0.28 + transient * 0.2;
-      liquidTextSpeedRef.current += (targetSpeed - liquidTextSpeedRef.current) * 0.06;
-      liquidTextTimeRef.current += delta * liquidTextSpeedRef.current * Math.max(0.25, textSpeed);
-
-      const uniforms = liquidTextMaterialRef.current.uniforms;
-      uniforms.tText.value = tex;
-      uniforms.uTime.value = liquidTextTimeRef.current;
-      uniforms.uBass.value += (bass - uniforms.uBass.value) * 0.08;
-      uniforms.uLowMid.value += (lowMid - uniforms.uLowMid.value) * 0.07;
-      uniforms.uEnergy.value += (energy - uniforms.uEnergy.value) * 0.07;
-      uniforms.uGlow.value = textGlow;
-      uniforms.uTextColor.value.set(baseColor);
+       mat.color.set(textColor);
+       mat.color.multiplyScalar(textGlow + beat * 2.0 + transient * 1.1 + spectralFlux * 0.8);
     }
   });
 
-  if(!textInput || textInput === " " || currentScene === 'Dumbar') return null;
+  if(!textInput || textInput === " " || currentScene === 'Dumbar' || currentScene === 'Topology') return null;
 
   return (
     <mesh ref={textRef} position={[0, 0, 1]}>
       <planeGeometry args={[20, 10]} />
-      {currentScene === 'Liquid' ? (
-        <shaderMaterial
-          ref={liquidTextMaterialRef}
-          vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
-          fragmentShader={liquidTextFragment}
-          uniforms={{
-            tText: { value: tex },
-            uTime: { value: 0 },
-            uBass: { value: 0 },
-            uLowMid: { value: 0 },
-            uEnergy: { value: 0 },
-            uGlow: { value: textGlow },
-            uTextColor: { value: new THREE.Color(baseColor) },
-          }}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      ) : (
-        <meshBasicMaterial
-          map={tex}
-          transparent
-          opacity={0.9}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      )}
+      <meshBasicMaterial
+        map={tex}
+        transparent
+        opacity={0.9}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
     </mesh>
   );
 }
 
 // === HIGH-END POST PROCESSING ===
 function PostProcessing() {
-  const { bloomIntensity, rgbSplitAmount, glitchActive } = useStore();
+  const { audioDriveMode, audioFxReactive, autoVjEnabled, bloomIntensity, rgbSplitAmount, distortion, glitchActive } = useStore();
   const [dynamicBloom, setDynamicBloom] = useState(bloomIntensity);
   const [dynamicSplit, setDynamicSplit] = useState(rgbSplitAmount);
+  const [dynamicDistortion, setDynamicDistortion] = useState(distortion);
+  const [dynamicGlitch, setDynamicGlitch] = useState(false);
 
   useFrame(() => {
-    const { energy, beat, bass } = audioEngine.current;
+    const { energy, beat, bass, subBass, mid, treble, highMid, spectralFlux, transient, spectralCentroid, dynamicRange } = getAudioDriveSnapshot(audioDriveMode);
+    const morph = autoVjEnabled && audioFxReactive ? 1 : 0;
     
-    // Dynamic bloom
-    const targetBloom = bloomIntensity + (energy * 0.5) + (beat * 2.0);
+    const targetBloom = bloomIntensity + (energy * 0.95 + beat * 1.7 + treble * 0.45 + spectralFlux * 1.1 + transient * 0.85) * morph;
     setDynamicBloom(prev => prev + (targetBloom - prev) * 0.1); 
 
-    // Dynamic Chromatic Aberration
-    const targetSplit = rgbSplitAmount + (bass * 0.015) + (beat * 0.03);
+    const targetSplit = rgbSplitAmount + (bass * 0.014 + subBass * 0.012 + beat * 0.02 + highMid * 0.012 + spectralCentroid * 0.014 + spectralFlux * 0.018 + distortion * 0.006) * morph;
     setDynamicSplit(prev => prev + (targetSplit - prev) * 0.2);
+
+    const targetDistortion = distortion + (subBass * 0.42 + bass * 0.24 + mid * 0.16 + dynamicRange * 0.34 + spectralFlux * 0.42 + beat * 0.24) * morph;
+    setDynamicDistortion(prev => prev + (targetDistortion - prev) * 0.16);
+
+    setDynamicGlitch(glitchActive || (morph > 0 && (beat > 0.65 || treble > 0.58 || bass > 0.72 || transient > 0.68 || spectralFlux > 0.64)));
   });
 
   return (
@@ -1558,11 +1369,11 @@ function PostProcessing() {
         intensity={dynamicBloom} 
         mipmapBlur
       />
-      {glitchActive && (
+      {dynamicGlitch && (
         <Glitch 
-          delay={new THREE.Vector2(0.5, 1.5)} 
-          duration={new THREE.Vector2(0.1, 0.3)} 
-          strength={new THREE.Vector2(0.3, 1.0)} 
+          delay={new THREE.Vector2(0.15, 0.8)}
+          duration={new THREE.Vector2(0.06, 0.22)}
+          strength={new THREE.Vector2(0.18 + dynamicDistortion * 0.3, 0.55 + dynamicDistortion * 0.6)}
           mode={GlitchMode.SPORADIC}
           ratio={0.85}
         />
@@ -1573,28 +1384,192 @@ function PostProcessing() {
   );
 }
 
-export function Visualizer() {
-  const { contrast, brightness, saturation, bgColor } = useStore();
-  
+function MusicCameraRig() {
+  const { camera } = useThree();
+  const { audioDriveMode, musicCameraEnabled, speed, chaos } = useStore();
+  const lookTarget = useMemo(() => new THREE.Vector3(), []);
+  const targetPosition = useMemo(() => new THREE.Vector3(0, 0, 5), []);
+
+  useFrame((state) => {
+    const { bass, subBass, mid, treble, beat, energy, spectralFlux, spectralCentroid, transient, dynamicRange } = getAudioDriveSnapshot(audioDriveMode);
+    const amount = musicCameraEnabled ? 0.8 : 0;
+    const time = state.clock.elapsedTime * (0.2 + speed * 0.18);
+    const orbit = time + bass * 1.55 * amount + treble * 0.75 * amount + spectralCentroid * 0.8 * amount;
+    const radius = 5 + subBass * 2.2 * amount + beat * 0.65 * amount + dynamicRange * 0.85 * amount;
+    const lift = Math.sin(time * (1.7 + spectralFlux * 1.2)) * (0.35 + mid * 1.05 + transient * 0.45) * amount;
+
+    targetPosition.set(
+      Math.sin(orbit) * (0.35 + chaos * 0.22) * amount,
+      lift,
+      radius + Math.cos(orbit * 0.7) * 0.75 * amount
+    );
+
+    camera.position.lerp(targetPosition, 0.055);
+    lookTarget.set(
+      Math.sin(time * 1.3) * (treble + spectralFlux) * 0.45 * amount,
+      Math.cos(time * 1.1) * (mid + spectralCentroid) * 0.38 * amount,
+      (beat * 0.12 + transient * 0.2) * amount
+    );
+    camera.lookAt(lookTarget);
+
+    if (camera instanceof THREE.PerspectiveCamera) {
+      const nextFov = 60 + energy * 6 * amount + beat * 3 * amount + spectralFlux * 4.5 * amount;
+      camera.fov += (nextFov - camera.fov) * 0.08;
+      camera.updateProjectionMatrix();
+    }
+  });
+
+  return null;
+}
+
+function AudioMorphTone() {
+  const { scene } = useThree();
+  const { audioDriveMode, autoVjEnabled, bgColor, baseColor, secondaryColor } = useStore();
+  const quietColor = useMemo(() => new THREE.Color(), []);
+  const pulseColor = useMemo(() => new THREE.Color(), []);
+  const targetColor = useMemo(() => new THREE.Color(), []);
+
+  useFrame(() => {
+    quietColor.set(bgColor);
+
+    if (!autoVjEnabled) {
+      scene.background = quietColor;
+      return;
+    }
+
+    const { bass, treble, energy, beat, spectralCentroid, spectralFlux, transient } = getAudioDriveSnapshot(audioDriveMode);
+    pulseColor.set(treble + spectralCentroid > bass ? secondaryColor : baseColor);
+    targetColor.copy(quietColor).lerp(pulseColor, Math.min(0.52, energy * 0.24 + beat * 0.1 + spectralFlux * 0.2 + transient * 0.16));
+    scene.background = targetColor.clone();
+  });
+
+  return null;
+}
+
+function PulseEnergyOverlay() {
+  const {
+    currentScene,
+    textInput,
+    textAnimStyle,
+    textFontSize,
+    textFontWeight,
+    textLetterSpacing,
+    textGlow,
+    textSpeed,
+    textColor,
+  } = useStore();
+  if (currentScene !== 'Pulse') return null;
+
+  const displayText = (textInput?.trim() || 'GAFA').toUpperCase();
+  const normalizedStyle = ['Cinematic', 'Massive', 'Glitch', 'Hologram', 'Floating', 'Beat'].includes(textAnimStyle)
+    ? textAnimStyle.toLowerCase()
+    : 'glitch';
+  const titleStyle = {
+    '--pulse-title-size': `${Math.max(28, Math.min(148, textFontSize * 18))}px`,
+    '--pulse-title-weight': textFontWeight,
+    '--pulse-title-spacing': `${textLetterSpacing}em`,
+    '--pulse-title-speed': `${Math.max(0.35, 1.45 / Math.max(textSpeed, 0.2))}s`,
+    '--pulse-title-glow': `${Math.max(10, Math.min(72, 12 + textGlow * 11))}px`,
+    '--pulse-title-color': textColor,
+  } as React.CSSProperties;
+
+  const fragments = Array.from({ length: 22 }, (_, index) => {
+    const style = {
+      '--x': `${(index * 37) % 100}%`,
+      '--y': `${22 + ((index * 19) % 52)}%`,
+      '--w': `${24 + ((index * 13) % 86)}px`,
+      '--d': `${(index % 7) * -0.31}s`,
+      '--a': `${-14 + ((index * 23) % 28)}deg`,
+    } as React.CSSProperties;
+
+    return <i key={index} className="pulse-energy-fragment" style={style} />;
+  });
+
+  const plates = Array.from({ length: 9 }, (_, index) => {
+    const style = {
+      '--px': `${8 + ((index * 23) % 82)}%`,
+      '--py': `${34 + ((index * 17) % 30)}%`,
+      '--pw': `${42 + ((index * 29) % 118)}px`,
+      '--ph': `${16 + ((index * 11) % 44)}px`,
+      '--pa': `${-22 + ((index * 31) % 44)}deg`,
+      '--pd': `${(index % 5) * -0.37}s`,
+    } as React.CSSProperties;
+
+    return <i key={index} className="pulse-energy-plate" style={style} />;
+  });
+
+  const trails = Array.from({ length: 8 }, (_, index) => {
+    const style = {
+      '--ty': `${26 + index * 6}%`,
+      '--td': `${index * -0.42}s`,
+      '--tw': `${34 + ((index * 17) % 42)}%`,
+    } as React.CSSProperties;
+
+    return <i key={index} className="pulse-energy-trail" style={style} />;
+  });
+
   return (
-    <div 
-      className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{
-        filter: `contrast(${contrast}) brightness(${brightness}) saturate(${saturation})`
-      }}
-    >
-      <Canvas
-        className="pointer-events-none"
-        camera={{ position: [0, 0, 5], fov: 60 }}
-        dpr={[1, 2]}
-        gl={{ antialias: true, alpha: false }}
+    <div className="pulse-energy-overlay" aria-hidden="true">
+      <div className="pulse-energy-haze" />
+      <div className="pulse-energy-band" />
+      {trails}
+      {plates}
+      {fragments}
+      <div
+        className={`pulse-energy-title pulse-energy-title--${normalizedStyle}`}
+        data-text={displayText}
+        style={titleStyle}
       >
-        <color attach="background" args={[bgColor]} />
-        <SceneRouter />
-        <VisualText />
-        <PostProcessing />
-      </Canvas>
+        <span>{displayText}</span>
+      </div>
+      <div className="pulse-energy-scan" />
+      <div className="pulse-energy-noise" />
     </div>
   );
 }
 
+export function Visualizer() {
+  const { audioDriveMode, autoVjEnabled, contrast, brightness, saturation, bgColor } = useStore();
+  const [audioFilter, setAudioFilter] = useState({ contrast: 0, brightness: 0, saturation: 0 });
+
+  useEffect(() => {
+    if (!autoVjEnabled) {
+      setAudioFilter({ contrast: 0, brightness: 0, saturation: 0 });
+      return;
+    }
+
+    let frame = 0;
+    const updateFilter = () => {
+      const { bass, treble, energy, beat, spectralFlux, transient, spectralCentroid } = getAudioDriveSnapshot(audioDriveMode);
+      setAudioFilter({
+        contrast: energy * 0.1 + beat * 0.05 + spectralFlux * 0.12,
+        brightness: bass * 0.06 + beat * 0.05 + transient * 0.07,
+        saturation: treble * 0.28 + energy * 0.1 + spectralCentroid * 0.18,
+      });
+      frame = requestAnimationFrame(updateFilter);
+    };
+
+    updateFilter();
+    return () => cancelAnimationFrame(frame);
+  }, [audioDriveMode, autoVjEnabled]);
+  
+  return (
+    <div 
+      className="absolute inset-0 w-full h-full"
+      style={{
+        filter: `contrast(${contrast + audioFilter.contrast}) brightness(${brightness + audioFilter.brightness}) saturate(${saturation + audioFilter.saturation})`
+      }}
+    >
+      <Canvas camera={{ position: [0, 0, 5], fov: 60 }} dpr={[1, 2]} gl={{ antialias: true, alpha: false }}>
+        <color attach="background" args={[bgColor]} />
+        <AudioMorphTone />
+        <MusicCameraRig />
+        <SceneRouter />
+        <AudioMutationOverlay />
+        <VisualText />
+        <PostProcessing />
+      </Canvas>
+      <PulseEnergyOverlay />
+    </div>
+  );
+}

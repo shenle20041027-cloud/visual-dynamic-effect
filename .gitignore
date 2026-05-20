@@ -7,3 +7,4 @@ coverage/
 .env*
 .chrome-cdp/
 .npm-cache/
+docs/

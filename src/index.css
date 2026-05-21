@@ -372,6 +372,7 @@
   }
 
   .screen-canvas canvas {
+    background: inherit;
     width: 100% !important;
     height: 100% !important;
     display: block;

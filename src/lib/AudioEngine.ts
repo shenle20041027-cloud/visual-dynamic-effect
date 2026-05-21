@@ -6,6 +6,7 @@ export class AudioEngine {
   public dataArray: Uint8Array | null = null;
   public timeDataArray: Uint8Array | null = null;
   public source: MediaStreamAudioSourceNode | null = null;
+  private stream: MediaStream | null = null;
   private highPass: BiquadFilterNode | null = null;
   private lowPass: BiquadFilterNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
@@ -67,6 +68,7 @@ export class AudioEngine {
         },
         video: false,
       });
+      this.stream = stream;
       
       this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
       await this.context.resume();
@@ -261,12 +263,19 @@ export class AudioEngine {
 
   public destroy() {
     this.source?.disconnect();
+    this.stream?.getTracks().forEach((track) => track.stop());
     this.highPass?.disconnect();
     this.lowPass?.disconnect();
     this.compressor?.disconnect();
     this.analyser?.disconnect();
     this.context?.close();
     this.context = null;
+    this.stream = null;
+    this.source = null;
+    this.analyser = null;
+    this.dataArray = null;
+    this.timeDataArray = null;
+    this.isSimulating = false;
   }
 }
 

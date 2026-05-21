@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { BrainCircuit, Move, Orbit, Power, Save, Wand2 } from 'lucide-react';
 import { t } from '@/lib/i18n';
-import { getAudioDriveSnapshot, type AudioDriveMode } from '@/lib/audioDrive';
+import { getAudioDriveSnapshot } from '@/lib/audioDrive';
 
 const Toggle = ({ label, active, onToggle }: any) => (
   <div className="flex justify-between items-center gap-4">
@@ -36,9 +36,12 @@ export function ControlPanel() {
     autoVjEnabled,
     audioDriveMode,
     musicCameraEnabled,
+    visualInputSource,
+    musicPanelOpen,
     visualMemories,
     setAutoVjControl,
-    setAudioDriveMode,
+    setVisualInputSource,
+    setMusicPanelOpen,
     saveVisualMemory,
     applyVisualMemory,
     setPerformanceControl,
@@ -104,14 +107,6 @@ export function ControlPanel() {
     updateMicLevels();
     return () => cancelAnimationFrame(animationFrameId);
   }, [audioDriveMode]);
-
-  const driveOptions: Array<{ mode: AudioDriveMode; label: string }> = [
-    { mode: 'mic', label: i18n.DRIVE_MIC || 'Mic' },
-    { mode: 'music', label: i18n.DRIVE_MUSIC || 'Music' },
-    { mode: 'low', label: i18n.DRIVE_LOW || 'Low' },
-    { mode: 'mid', label: i18n.DRIVE_MID || 'Mid' },
-    { mode: 'high', label: i18n.DRIVE_HIGH || 'High' },
-  ];
 
   return (
     <div className="w-full p-6 flex flex-col gap-4">
@@ -180,14 +175,18 @@ export function ControlPanel() {
         />
 
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-white/45">{i18n.AUDIO_DRIVE_SOURCE || 'Drive Source'}</span>
-          <div className="grid grid-cols-5 gap-2">
-            {driveOptions.map((option) => (
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/45">Visual Input Source</span>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { source: 'mic' as const, label: 'Mic' },
+              { source: 'music' as const, label: 'Music Debug' },
+              { source: 'api' as const, label: 'Show API' },
+            ].map((option) => (
               <button
-                key={option.mode}
-                onClick={() => setAudioDriveMode(option.mode)}
+                key={option.source}
+                onClick={() => setVisualInputSource(option.source)}
                 className={`h-9 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                  audioDriveMode === option.mode
+                  visualInputSource === option.source
                     ? 'border-orange-300 bg-orange-300 text-black'
                     : 'border-white/10 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white'
                 }`}
@@ -196,12 +195,21 @@ export function ControlPanel() {
               </button>
             ))}
           </div>
+          {visualInputSource === 'music' && (
+            <button
+              type="button"
+              onClick={() => setMusicPanelOpen(!musicPanelOpen)}
+              className="h-8 rounded-lg border border-emerald-300/30 bg-emerald-300/10 text-[10px] font-bold uppercase tracking-widest text-emerald-100 hover:bg-emerald-300 hover:text-black"
+            >
+              {musicPanelOpen ? 'Hide Music Panel' : 'Show Music Panel'}
+            </button>
+          )}
         </div>
 
         <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
           <div className="mb-4 flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-widest text-white/75">
-              {audioDriveMode === 'mic' ? (i18n.LIVE_MIC_INPUT || 'Live Mic Input') : (i18n.AUDIO_DRIVE_SOURCE || 'Drive Source')}
+              {visualInputSource === 'api' ? 'Show API Control' : audioDriveMode === 'mic' ? (i18n.LIVE_MIC_INPUT || 'Live Mic Input') : (i18n.AUDIO_DRIVE_SOURCE || 'Drive Source')}
             </span>
             <span className={`h-2 w-2 rounded-full ${autoVjEnabled ? 'bg-orange-300 shadow-[0_0_12px_rgba(253,186,116,0.9)]' : 'bg-white/20'}`} />
           </div>

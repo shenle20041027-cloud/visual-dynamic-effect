@@ -5,6 +5,6 @@ coverage/
 .DS_Store
 *.log
 .env*
-!.env.example
 .chrome-cdp/
 .npm-cache/
+docs/

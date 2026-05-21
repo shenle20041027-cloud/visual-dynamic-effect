@@ -1,14 +1,18 @@
 import express from 'express';
 import http from 'node:http';
 import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { createServer as createViteServer } from 'vite';
 
-const port = Number(process.env.PORT || 3000);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const port = 4302;
+const backendOrigin = 'http://localhost:4300';
 const host = process.env.HOST || '0.0.0.0';
+const isLiveMode = process.env.NODE_ENV === 'production' || process.env.VJ_LIVE_MODE === '1';
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/sync' });
+const wss = new WebSocketServer({ noServer: true });
 
 let latestState = null;
 let clientCount = 0;
@@ -64,6 +68,17 @@ wss.on('connection', (socket) => {
   });
 });
 
+server.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+  if (url.pathname !== '/sync') {
+    return;
+  }
+
+  wss.handleUpgrade(request, socket, head, (websocket) => {
+    wss.emit('connection', websocket, request);
+  });
+});
+
 app.get('/api/sync/status', (_request, response) => {
   response.json({
     connected: clientCount,
@@ -90,14 +105,78 @@ app.get('/api/network', (_request, response) => {
   });
 });
 
-const vite = await createViteServer({
-  server: { middlewareMode: true },
-  appType: 'spa',
+// Proxy for /api requests to real backend (localhost:4300).
+// This must come AFTER local /api routes and BEFORE the app shell.
+app.use('/api', async (req, res, next) => {
+  const url = req.originalUrl || req.url;
+  
+  // 1. Check for local routes first (explicitly)
+  if (url === '/api/sync/status' || url === '/api/network') {
+    return next();
+  }
+
+  console.log(`[Proxy] Forwarding: ${req.method} ${url} -> ${backendOrigin}${url}`);
+  
+  try {
+    // Use localhost instead of 127.0.0.1 to be more consistent with user's report
+    const targetUrl = `${backendOrigin}${url}`;
+    const response = await fetch(targetUrl, {
+      method: req.method,
+      headers: {
+        ...req.headers,
+        host: 'localhost:4300',
+        'connection': 'keep-alive'
+      },
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+    });
+
+    const contentType = response.headers.get('content-type');
+    const data = await response.text();
+
+    if (contentType && contentType.includes('text/html')) {
+      console.error(`[Proxy] Backend returned HTML for ${url}. This usually means the route does not exist on the API server (404) or the API server is returning a fallback page.`);
+      res.status(response.status).send(data);
+      return;
+    }
+
+    res.setHeader('content-type', contentType || 'application/json');
+    res.status(response.status).send(data);
+  } catch (error) {
+    console.error(`[Proxy] Connection Error: ${error.message}`);
+    res.status(502).json({
+      error: 'Bad Gateway',
+      message: 'Backend API at localhost:4300 is not reachable. Please ensure vad.26.api is running.',
+      details: error.message
+    });
+  }
 });
 
-app.use(vite.middlewares);
+
+if (isLiveMode) {
+  const distDir = path.join(__dirname, 'dist');
+  app.use(express.static(distDir));
+  app.get('*', (_request, response) => {
+    response.sendFile(path.join(distDir, 'index.html'));
+  });
+} else {
+  const { createServer: createViteServer } = await import('vite');
+  const vite = await createViteServer({
+    server: {
+      middlewareMode: true,
+      hmr: {
+        server,
+        host: 'localhost',
+        clientPort: port,
+        path: '/__vite_hmr',
+      },
+    },
+    appType: 'spa',
+  });
+
+  app.use(vite.middlewares);
+}
 
 server.listen(port, host, () => {
-  console.log(`NEONPULSE controller: http://localhost:${port}/`);
+  console.log(`NEONPULSE controller: http://localhost:${port}/ (${isLiveMode ? 'live' : 'dev'})`);
   console.log(`Screen sync websocket: ws://localhost:${port}/sync`);
 });

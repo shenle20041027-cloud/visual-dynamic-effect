@@ -211,7 +211,7 @@ const playGlitch = (ctx: AudioContext, out: AudioNode) => {
 };
 
 export function MusicProjectBar() {
-  const { setAudioDriveMode, setAutoVjControl } = useStore();
+  const { setAudioDriveMode, setAutoVjControl, setVisualInputSource } = useStore();
   const [isPlaying, setIsPlaying] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [volume, setVolume] = useState(0.85);
@@ -377,6 +377,7 @@ export function MusicProjectBar() {
     uploadFrequencyRef.current = new Uint8Array(analyser.frequencyBinCount);
 
     setAudioDriveMode('music');
+    setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     setIsPlaying(true);
     uploadAnalysisTimerRef.current = window.setInterval(analyzeUploadedFrame, 48);
@@ -393,6 +394,7 @@ export function MusicProjectBar() {
 
     await audio.play();
     setAudioDriveMode('music');
+    setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     setIsPlaying(true);
     setUploadedName(getLinkLabel(url));
@@ -602,6 +604,7 @@ export function MusicProjectBar() {
     }
 
     setAudioDriveMode('music');
+    setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     stepRef.current = 0;
     triggerStep();
@@ -635,6 +638,7 @@ export function MusicProjectBar() {
     enabledLayersRef.current = preset.enabled;
     setEnabledLayers(preset.enabled);
     setAudioDriveMode('music');
+    setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
   };
 

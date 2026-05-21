@@ -1,8 +1,48 @@
 import { create } from 'zustand';
+import type { AudioDriveMode } from '../lib/audioDrive';
+
+export type VisualInputSource = 'mic' | 'music' | 'api';
+export type OutputMode = 'mirror' | 'solo' | 'split';
+export type ScreenTransitionStyle = 'crossfade' | 'scan' | 'strobe' | 'cut';
+export type OutputDeviceType = 'stage' | 'projector' | 'led' | 'tablet' | 'phone';
+
+export interface VisualScreen {
+  id: string;
+  name: string;
+  device: OutputDeviceType;
+  scene: string;
+  enabled: boolean;
+}
+
+export interface VisualMemory {
+  id: string;
+  name: string;
+  currentScene: string;
+  baseColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  bgColor: string;
+  bloomIntensity: number;
+  rgbSplitAmount: number;
+  distortion: number;
+  glitchActive: boolean;
+  speed: number;
+  chaos: number;
+  textInput: string;
+  textAnimStyle: string;
+  textGlow: number;
+  textSpeed: number;
+  textReactive: number;
+  textColor: string;
+}
 
 interface VisualizerState {
   audioReady: boolean;
   setAudioReady: (ready: boolean) => void;
+  visualInputSource: VisualInputSource;
+  musicPanelOpen: boolean;
+  setVisualInputSource: (source: VisualInputSource) => void;
+  setMusicPanelOpen: (open: boolean) => void;
   
   // Language
   language: 'EN' | 'ZH';
@@ -38,10 +78,11 @@ interface VisualizerState {
   textGlow: number;
   textSpeed: number;
   textReactive: number;
+  textColor: string;
   textFontSize: number;
   textFontWeight: number;
   textLetterSpacing: number;
-  setTextEngine: (key: 'textInput' | 'textAnimStyle' | 'textGlow' | 'textSpeed' | 'textReactive' | 'textFontSize' | 'textFontWeight' | 'textLetterSpacing', value: string | number) => void;
+  setTextEngine: (key: 'textInput' | 'textAnimStyle' | 'textGlow' | 'textSpeed' | 'textReactive' | 'textColor' | 'textFontSize' | 'textFontWeight' | 'textLetterSpacing', value: string | number) => void;
 
   // Enhancements
   baseColor: string;
@@ -69,11 +110,123 @@ interface VisualizerState {
   activeLeftPanel: string;
   setActiveLeftPanel: (panel: string) => void;
   applyPreset: (presetId: string) => void;
+
+  // Auto VJ
+  autoVjEnabled: boolean;
+  memoryRecallEnabled: boolean;
+  musicCameraEnabled: boolean;
+  audioFxReactive: boolean;
+  autoVjSensitivity: number;
+  musicCameraAmount: number;
+  transitionEnergy: number;
+  audioDriveMode: AudioDriveMode;
+  visualMemories: VisualMemory[];
+  visualScreens: VisualScreen[];
+  activeScreenId: string;
+  outputMode: OutputMode;
+  screenTransitionStyle: ScreenTransitionStyle;
+  screenTransitionAmount: number;
+  screenAudioReactive: boolean;
+  syncedScreenSignal: number;
+  setAutoVjControl: (key: 'autoVjEnabled' | 'memoryRecallEnabled' | 'musicCameraEnabled' | 'audioFxReactive', value: boolean) => void;
+  setAutoVjAmount: (key: 'autoVjSensitivity' | 'musicCameraAmount' | 'transitionEnergy', value: number) => void;
+  setAudioDriveMode: (mode: AudioDriveMode) => void;
+  setActiveScreen: (id: string) => void;
+  setScreenScene: (id: string, scene: string) => void;
+  setScreenEnabled: (id: string, enabled: boolean) => void;
+  setScreenControl: (key: 'outputMode' | 'screenTransitionStyle' | 'screenTransitionAmount' | 'screenAudioReactive', value: string | number | boolean) => void;
+  setSyncedScreenSignal: (value: number) => void;
+  applyRemoteSyncState: (state: Partial<VisualizerState>) => void;
+  saveVisualMemory: () => void;
+  applyVisualMemory: (id: string) => void;
 }
+
+const createMemorySnapshot = (state: VisualizerState, name: string): VisualMemory => ({
+  id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  name,
+  currentScene: state.currentScene,
+  baseColor: state.baseColor,
+  secondaryColor: state.secondaryColor,
+  accentColor: state.accentColor,
+  bgColor: state.bgColor,
+  bloomIntensity: state.bloomIntensity,
+  rgbSplitAmount: state.rgbSplitAmount,
+  distortion: state.distortion,
+  glitchActive: state.glitchActive,
+  speed: state.speed,
+  chaos: state.chaos,
+  textInput: state.textInput,
+  textAnimStyle: state.textAnimStyle,
+  textGlow: state.textGlow,
+  textSpeed: state.textSpeed,
+  textReactive: state.textReactive,
+  textColor: state.textColor,
+});
+
+const applyMemoryState = (memory: VisualMemory) => ({
+  currentScene: memory.currentScene,
+  baseColor: memory.baseColor,
+  secondaryColor: memory.secondaryColor,
+  accentColor: memory.accentColor,
+  bgColor: memory.bgColor,
+  bloomIntensity: memory.bloomIntensity,
+  rgbSplitAmount: memory.rgbSplitAmount,
+  distortion: memory.distortion,
+  glitchActive: memory.glitchActive,
+  speed: memory.speed,
+  chaos: memory.chaos,
+  textInput: memory.textInput,
+  textAnimStyle: memory.textAnimStyle,
+  textGlow: memory.textGlow,
+  textSpeed: memory.textSpeed,
+  textReactive: memory.textReactive,
+  textColor: memory.textColor,
+});
+
+const MEMORY_STORAGE_KEY = 'neonpulse.visualMemories';
+
+const defaultScreens: VisualScreen[] = [
+  { id: 'stage-main', name: 'Main Stage', device: 'stage', scene: 'Cyber', enabled: true },
+  { id: 'projector-left', name: 'Projector L', device: 'projector', scene: 'Topology', enabled: true },
+  { id: 'led-wall', name: 'LED Wall', device: 'led', scene: 'Pulse', enabled: true },
+  { id: 'tablet-booth', name: 'Booth Tablet', device: 'tablet', scene: 'Liquid', enabled: false },
+  { id: 'phone-roam', name: 'Phone View', device: 'phone', scene: 'Void', enabled: false },
+];
+
+const loadStoredMemories = (): VisualMemory[] => {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = window.localStorage.getItem(MEMORY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistMemories = (memories: VisualMemory[]) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(MEMORY_STORAGE_KEY, JSON.stringify(memories));
+  } catch {
+    // If storage is unavailable, the in-memory session still works.
+  }
+};
 
 export const useStore = create<VisualizerState>((set) => ({
   audioReady: false,
   setAudioReady: (ready) => set({ audioReady: ready }),
+  visualInputSource: 'api',
+  musicPanelOpen: false,
+  setVisualInputSource: (source) => set({
+    visualInputSource: source,
+    musicPanelOpen: source === 'music',
+    audioDriveMode: source === 'music' ? 'music' : 'mic',
+    autoVjEnabled: true,
+    musicCameraEnabled: source !== 'mic',
+  }),
+  setMusicPanelOpen: (open) => set({ musicPanelOpen: open }),
 
   // Language
   language: 'EN',
@@ -104,14 +257,15 @@ export const useStore = create<VisualizerState>((set) => ({
   setCurrentScene: (scene) => set({ currentScene: scene }),
 
   // Text Engine Defaults
-  textInput: 'NEONPULSE',
-  textAnimStyle: 'Cinematic Title',
+  textInput: 'GAFA',
+  textAnimStyle: 'Glitch',
   textGlow: 1.0,
   textSpeed: 1.0,
   textReactive: 1.0,
-  textFontSize: 5.0,
+  textColor: '#ffffff',
+  textFontSize: 4.6,
   textFontWeight: 900,
-  textLetterSpacing: -0.1,
+  textLetterSpacing: 0.02,
   setTextEngine: (key, value) => set({ [key]: value }),
 
   baseColor: '#00f3ff',
@@ -137,6 +291,94 @@ export const useStore = create<VisualizerState>((set) => ({
   setIsFullscreen: (val) => set({ isFullscreen: val }),
   activeLeftPanel: 'Presets',
   setActiveLeftPanel: (panel) => set({ activeLeftPanel: panel }),
+  autoVjEnabled: true,
+  memoryRecallEnabled: true,
+  musicCameraEnabled: true,
+  audioFxReactive: true,
+  autoVjSensitivity: 1.0,
+  musicCameraAmount: 0.8,
+  transitionEnergy: 0.45,
+  audioDriveMode: 'mic',
+  visualMemories: loadStoredMemories(),
+  visualScreens: defaultScreens,
+  activeScreenId: 'stage-main',
+  outputMode: 'mirror',
+  screenTransitionStyle: 'crossfade',
+  screenTransitionAmount: 0.65,
+  screenAudioReactive: true,
+  syncedScreenSignal: 0,
+  setAutoVjControl: (key, value) => set({ [key]: value }),
+  setAutoVjAmount: (key, value) => set({ [key]: value }),
+  setAudioDriveMode: (mode) => set({ audioDriveMode: mode }),
+  setActiveScreen: (id) => set((state) => {
+    const screen = state.visualScreens.find((item) => item.id === id);
+    return screen ? { activeScreenId: id, currentScene: screen.scene } : {};
+  }),
+  setScreenScene: (id, scene) => set((state) => ({
+    visualScreens: state.visualScreens.map((screen) => (
+      screen.id === id ? { ...screen, scene, enabled: true } : screen
+    )),
+    currentScene: state.activeScreenId === id ? scene : state.currentScene,
+  })),
+  setScreenEnabled: (id, enabled) => set((state) => ({
+    visualScreens: state.visualScreens.map((screen) => (
+      screen.id === id ? { ...screen, enabled } : screen
+    )),
+  })),
+  setScreenControl: (key, value) => set({ [key]: value } as Partial<VisualizerState>),
+  setSyncedScreenSignal: (value) => set((state) => (
+    Math.abs(state.syncedScreenSignal - value) < 0.01 ? {} : { syncedScreenSignal: value }
+  )),
+  applyRemoteSyncState: (state) => set((current) => ({
+    activeScreenId: state.activeScreenId ?? current.activeScreenId,
+    visualScreens: state.visualScreens ?? current.visualScreens,
+    outputMode: state.outputMode ?? current.outputMode,
+    screenTransitionStyle: state.screenTransitionStyle ?? current.screenTransitionStyle,
+    screenTransitionAmount: state.screenTransitionAmount ?? current.screenTransitionAmount,
+    screenAudioReactive: state.screenAudioReactive ?? current.screenAudioReactive,
+    syncedScreenSignal: state.syncedScreenSignal ?? current.syncedScreenSignal,
+    currentScene: state.currentScene ?? current.currentScene,
+    baseColor: state.baseColor ?? current.baseColor,
+    secondaryColor: state.secondaryColor ?? current.secondaryColor,
+    accentColor: state.accentColor ?? current.accentColor,
+    bgColor: state.bgColor ?? current.bgColor,
+    bloomIntensity: state.bloomIntensity ?? current.bloomIntensity,
+    bloomThreshold: state.bloomThreshold ?? current.bloomThreshold,
+    glitchActive: state.glitchActive ?? current.glitchActive,
+    rgbSplitAmount: state.rgbSplitAmount ?? current.rgbSplitAmount,
+    distortion: state.distortion ?? current.distortion,
+    speed: state.speed ?? current.speed,
+    chaos: state.chaos ?? current.chaos,
+    saturation: state.saturation ?? current.saturation,
+    contrast: state.contrast ?? current.contrast,
+    brightness: state.brightness ?? current.brightness,
+    gamma: state.gamma ?? current.gamma,
+    exposure: state.exposure ?? current.exposure,
+    textInput: state.textInput ?? current.textInput,
+    textAnimStyle: state.textAnimStyle ?? current.textAnimStyle,
+    textGlow: state.textGlow ?? current.textGlow,
+    textSpeed: state.textSpeed ?? current.textSpeed,
+    textReactive: state.textReactive ?? current.textReactive,
+    textFontSize: state.textFontSize ?? current.textFontSize,
+    textFontWeight: state.textFontWeight ?? current.textFontWeight,
+    textLetterSpacing: state.textLetterSpacing ?? current.textLetterSpacing,
+    autoVjEnabled: state.autoVjEnabled ?? current.autoVjEnabled,
+    audioFxReactive: state.audioFxReactive ?? current.audioFxReactive,
+    musicCameraEnabled: state.musicCameraEnabled ?? current.musicCameraEnabled,
+    musicCameraAmount: state.musicCameraAmount ?? current.musicCameraAmount,
+    transitionEnergy: state.transitionEnergy ?? current.transitionEnergy,
+    audioDriveMode: state.audioDriveMode ?? current.audioDriveMode,
+  })),
+  saveVisualMemory: () => set((state) => {
+    const memory = createMemorySnapshot(state, `Memory ${Math.min(state.visualMemories.length + 1, 8)}`);
+    const visualMemories = [memory, ...state.visualMemories].slice(0, 8);
+    persistMemories(visualMemories);
+    return { visualMemories };
+  }),
+  applyVisualMemory: (id) => set((state) => {
+    const memory = state.visualMemories.find((item) => item.id === id);
+    return memory ? applyMemoryState(memory) : {};
+  }),
   applyPreset: (presetId) => {
     switch(presetId) {
        case 'Cyberpunk':
@@ -145,14 +387,35 @@ export const useStore = create<VisualizerState>((set) => ({
        case 'Liquid Dream':
           set({ currentScene: 'Liquid', baseColor: '#b026ff', secondaryColor: '#00ccff', bloomIntensity: 1.5, textAnimStyle: 'Floating' });
           break;
+       case 'Sonic Topology':
+          set({ currentScene: 'Topology', baseColor: '#ffffff', secondaryColor: '#ff3366', bgColor: '#000000', bloomIntensity: 1.8, distortion: 0.18, speed: 1.0, chaos: 0.25, textAnimStyle: 'Cinematic' });
+          break;
        case 'Neon Pulse':
-          set({ currentScene: 'Pulse', baseColor: '#ff007f', secondaryColor: '#ff003c', glitchActive: true, bloomIntensity: 3, textAnimStyle: 'Beat' });
+          set({
+            currentScene: 'Pulse',
+            baseColor: '#ff1600',
+            secondaryColor: '#ff7a18',
+            accentColor: '#ffffff',
+            bgColor: '#020000',
+            glitchActive: true,
+            bloomIntensity: 2.45,
+            rgbSplitAmount: 0.012,
+            distortion: 0.42,
+            speed: 1.35,
+            chaos: 0.78,
+            textInput: 'GAFA',
+            textColor: '#ffffff',
+            textFontSize: 4.6,
+            textFontWeight: 900,
+            textLetterSpacing: 0.02,
+            textAnimStyle: 'Glitch'
+          });
           break;
        case 'Dark Space':
           set({ currentScene: 'Void', baseColor: '#ffffff', secondaryColor: '#444444', bloomIntensity: 1, textAnimStyle: 'Massive' });
           break;
        case 'Dumbar Base':
-          set({ currentScene: 'Dumbar', baseColor: '#ffffff', secondaryColor: '#000000', bgColor: '#050505', textAnimStyle: 'Dumbar', contrast: 1.5, saturation: 1.0 });
+          set({ currentScene: 'Dumbar', baseColor: '#d8d8d8', secondaryColor: '#5f5f5f', bgColor: '#050505', bloomIntensity: 1.15, rgbSplitAmount: 0.0, distortion: 0.03, glitchActive: false, speed: 1.0, chaos: 0.42, contrast: 1.24, saturation: 1.08, brightness: 0.96, musicCameraEnabled: true, audioFxReactive: true });
           break;
     }
   }

@@ -1889,6 +1889,8 @@ const pulseFragment = `
   uniform float uBass;
   uniform float uBeat;
   uniform float uTreble;
+  uniform float uEnergy;
+  uniform float uAspect;
   uniform vec3 uColor;
   uniform vec3 uSecondaryColor;
   uniform vec3 uAccentColor;
@@ -1899,71 +1901,167 @@ const pulseFragment = `
     return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
   }
 
-  // 3D grid function
-  float drawGrid(vec2 uv, float tilt, float pan) {
-      uv.y -= tilt;
-      if (uv.y < 0.0) return 0.0;
-      float z = 1.0 / uv.y;
-      vec2 gridUv = vec2(uv.x * z + pan, z - uTime * (5.0 + uBass * 10.0));
-      float gridX = abs(fract(gridUv.x * 5.0) - 0.5);
-      float gridY = abs(fract(gridUv.y * 5.0) - 0.5);
-      float lineX = smoothstep(0.1, 0.0, gridX / z * 1.5);
-      float lineY = smoothstep(0.1, 0.0, gridY / z * 1.5);
-      float line = max(lineX, lineY);
-      return line * exp(-z * 0.06);
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      v += noise(p) * a;
+      p = mat2(1.62, -1.07, 1.07, 1.62) * p + 13.7;
+      a *= 0.52;
+    }
+    return v;
+  }
+
+  float softBlob(vec2 p, vec2 c, vec2 r, float wobble) {
+    vec2 q = (p - c) / r;
+    float n = fbm(q * 1.6 + vec2(uTime * 0.08, -uTime * 0.05));
+    q.x += (n - 0.5) * wobble;
+    q.y += (fbm(q.yx * 2.1 - uTime * 0.06) - 0.5) * wobble * 0.75;
+    return smoothstep(1.05, 0.34, length(q));
+  }
+
+  float box(vec2 p, vec2 b) {
+    vec2 d = abs(p) - b;
+    return 1.0 - smoothstep(0.0, 0.018, length(max(d, 0.0)) + min(max(d.x, d.y), 0.0));
+  }
+
+  float segment(vec2 p, vec2 a, vec2 b, float width) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return 1.0 - smoothstep(width, width * 2.8, length(pa - ba * h));
+  }
+
+  float shard(vec2 p, vec2 c, vec2 s, float angle) {
+    float sn = sin(angle);
+    float cs = cos(angle);
+    vec2 q = mat2(cs, -sn, sn, cs) * (p - c);
+    float body = box(q, s);
+    float cutA = smoothstep(-s.x * 0.9, s.x * 0.65, q.x + q.y * 0.42);
+    float cutB = 1.0 - smoothstep(s.x * 0.25, s.x * 1.12, q.x - q.y * 0.36);
+    return body * cutA * cutB;
+  }
+
+  float glitchRun(vec2 p, float y, float width, float seed) {
+    float wave = y + sin(p.x * 7.0 + uTime * (0.8 + seed)) * 0.035;
+    float line = 1.0 - smoothstep(width, width * 3.0, abs(p.y - wave));
+    float cells = step(0.52, hash(floor(vec2((p.x + uTime * (0.55 + seed * 0.2)) * 42.0, seed * 23.0))));
+    float gate = smoothstep(-1.05, -0.42, p.x) * (1.0 - smoothstep(0.42, 1.18, p.x));
+    return line * cells * gate;
   }
 
   void main() {
     vec2 p = vUv * 2.0 - 1.0;
-    
-    // Beat shaking
-    p.y += sin(uTime * 30.0) * 0.02 * uBeat;
-    p.x += cos(uTime * 25.0) * 0.02 * uBeat;
+    p.x *= uAspect;
+    p += vec2(sin(uTime * 1.7) * 0.025, cos(uTime * 1.2) * 0.015) * (uBeat + uBass);
 
-    // Floor & Ceiling Grid
-    float floorGrid = drawGrid(p, -0.4 + uBass * 0.05, 0.0);
-    float ceilGrid = drawGrid(-p, -0.4 + uBass * 0.05, sin(uTime) * 0.2); 
-    
-    // Background pulsing flash
-    vec3 pulseColor = mix(uColor, uSecondaryColor, clamp(0.28 + uBeat * 0.42 + uTreble * 0.16, 0.0, 1.0));
-    vec3 stageColor = uBgColor * 0.22 + pulseColor * (0.05 + floorGrid * (1.0 + uBass*2.0) + ceilGrid * (1.0 + uBass*2.0));
-    
-    // V-shaped light beams hitting the center stage
-    float beamMask = max(0.0, 1.0 - abs(p.x * 2.0 - p.y) * 2.0) + max(0.0, 1.0 - abs(p.x * -2.0 - p.y) * 2.0);
-    stageColor += mix(pulseColor, uAccentColor, 0.45) * beamMask * 0.1 * (1.0 + uBass * 4.0) * exp(-abs(p.y)*2.0);
+    float drift = sin(uTime * 0.18) * 0.18;
+    float field = 0.0;
+    field += softBlob(p, vec2(-0.95 + drift, 0.18), vec2(0.34, 0.18), 0.42);
+    field += softBlob(p, vec2(-0.38 + drift * 0.4, -0.04), vec2(0.50, 0.20), 0.5);
+    field += softBlob(p, vec2(0.28 - drift * 0.35, 0.09), vec2(0.44, 0.19), 0.44);
+    field += softBlob(p, vec2(0.92 - drift * 0.65, -0.02), vec2(0.30, 0.17), 0.38);
+    field += softBlob(p, vec2(-0.78 - drift * 0.45, -0.44), vec2(0.17, 0.10), 0.34);
+    field = clamp(field, 0.0, 1.4);
 
-    // Laser strobe
-    float laserId = floor(p.x * 8.0 + uTime * 6.0);
-    float laser = step(0.9, hash(vec2(laserId, floor(uTime*12.0)))) * step(0.0, p.y + 0.3);
-    stageColor += laser * uAccentColor * (0.55 + uBass * 2.2) * exp(-abs(p.y) * 2.0);
+    float tearMask = smoothstep(0.2, 0.82, fbm(p * vec2(2.2, 7.8) + vec2(uTime * 0.12, -uTime * 0.07)));
+    field *= mix(0.48, 1.0, tearMask);
 
-    // Vignette
-    float vignette = length(p);
-    stageColor *= smoothstep(2.5, 0.3, vignette);
-    
-    // Screen scanlines
-    float scanline = sin(vUv.y * 800.0) * 0.04 + 0.96;
-    stageColor *= scanline;
-    
-    // Aggressive noise based on bass
-    float noise = hash(p * 123.0 + uTime) - 0.5;
-    stageColor += noise * 0.2 * (1.0 + uBass * 3.0);
+    float aura = smoothstep(0.08, 0.78, field);
+    float core = smoothstep(0.66, 1.15, field);
+    float torn = fbm(p * vec2(3.4, 8.5) + vec2(uTime * 0.18, -uTime * 0.08));
+    float brokenCore = core * smoothstep(0.18, 0.82, torn + uBass * 0.22);
 
-    gl_FragColor = vec4(stageColor, 1.0);
+    vec3 amber = vec3(0.95, 0.46, 0.16);
+    vec3 gold = vec3(1.0, 0.66, 0.28);
+    vec3 red = vec3(1.0, 0.02, 0.0);
+    vec3 hotRed = vec3(1.0, 0.0, 0.0);
+    vec3 silver = vec3(0.78, 0.9, 0.92);
+    vec3 white = vec3(1.0);
+
+    vec3 col = vec3(0.0);
+    col += amber * aura * (0.18 + uEnergy * 0.08);
+    col += gold * core * (0.18 + uBass * 0.12);
+
+    float edge = smoothstep(0.22, 0.52, field) - smoothstep(0.64, 0.98, field);
+    float redEdge = edge * (0.65 + uBeat * 0.75);
+    col += red * redEdge * 0.62;
+
+    float runs = 0.0;
+    runs += glitchRun(p, 0.19, 0.006 + uTreble * 0.004, 1.0);
+    runs += glitchRun(p, 0.04, 0.005 + uBass * 0.005, 2.7);
+    runs += glitchRun(p, -0.12, 0.005, 4.4);
+    runs += glitchRun(p, -0.31, 0.004, 6.1);
+    runs *= smoothstep(0.38, 0.92, field + fbm(p * 1.5) * 0.22);
+    col += hotRed * runs * (0.46 + uBass * 0.52);
+    col += gold * runs * 0.08;
+
+    float micro = 0.0;
+    for (int i = 0; i < 4; i++) {
+      float fi = float(i);
+      vec2 c = vec2(hash(vec2(fi, 1.7)) * 2.35 - 1.18, hash(vec2(fi, 9.1)) * 0.92 - 0.46);
+      c.x += sin(uTime * (0.18 + hash(vec2(fi, 4.0)) * 0.3) + fi) * 0.18;
+      float len = 0.025 + hash(vec2(fi, 2.3)) * 0.09;
+      float on = step(0.48, hash(floor(vec2(fi * 4.3, uTime * (5.0 + uBeat * 8.0)))));
+      micro += segment(p, c - vec2(len, 0.0), c + vec2(len, 0.0), 0.004 + hash(vec2(fi, 3.1)) * 0.004) * on;
+    }
+    col += mix(gold, red, 0.68) * micro * (0.03 + aura * 0.18);
+
+    float metal = 0.0;
+    metal += shard(p, vec2(-0.82 + drift * 0.2, 0.18), vec2(0.16, 0.045), -0.18);
+    metal += shard(p, vec2(-0.24 - drift * 0.2, -0.18), vec2(0.20, 0.038), 0.08);
+    metal += shard(p, vec2(0.30 + drift * 0.15, 0.16), vec2(0.17, 0.04), -0.1);
+    metal += shard(p, vec2(0.78 - drift * 0.2, -0.05), vec2(0.18, 0.07), 0.23);
+    metal += shard(p, vec2(-0.55, -0.42), vec2(0.10, 0.035), -0.22);
+    metal += shard(p, vec2(0.04 + drift * 0.08, -0.02), vec2(0.14, 0.032), 0.18);
+    float metalMask = clamp(metal, 0.0, 1.0);
+    float bevel = smoothstep(0.2, 0.96, fbm(p * 14.0 + uTime * 0.25));
+    col += red * metalMask * (0.42 + uBeat * 0.22);
+    col += mix(silver * 0.5, white * 0.74, bevel) * metalMask * (0.42 + uTreble * 0.16);
+    col += red * smoothstep(0.0, 0.7, metal) * 0.18;
+
+    float flash = uBeat * step(0.72, hash(vec2(floor(uTime * 14.0), 91.0)));
+    col += white * flash * aura * 0.04;
+    col += red * flash * edge * 0.22;
+
+    float grain = hash(vUv * vec2(760.0, 430.0) + floor(uTime * 28.0)) - 0.5;
+    col += grain * (0.022 + uBass * 0.035);
+    float scan = 0.965 + sin(vUv.y * 720.0 + uTime * 14.0) * 0.025;
+    col *= scan;
+
+    float vignette = smoothstep(1.75, 0.24, length(p * vec2(0.78, 1.08)));
+    col *= vignette;
+    col = pow(max(col, vec3(0.0)), vec3(0.82));
+
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 function PulseScene() {
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const { baseColor, secondaryColor, accentColor, bgColor } = useStore();
+  const { size } = useThree();
 
   useFrame((state) => {
     if(!matRef.current) return;
-    const { bass, treble, beat } = getReactiveAudio();
+    const { bass, treble, beat, energy } = getReactiveAudio();
     matRef.current.uniforms.uTime.value = state.clock.elapsedTime;
     matRef.current.uniforms.uBass.value = bass;
     matRef.current.uniforms.uBeat.value = beat;
     matRef.current.uniforms.uTreble.value = treble;
+    matRef.current.uniforms.uEnergy.value = energy;
+    matRef.current.uniforms.uAspect.value = size.width / Math.max(size.height, 1);
     matRef.current.uniforms.uColor.value.set(baseColor);
     matRef.current.uniforms.uSecondaryColor.value.set(secondaryColor);
     matRef.current.uniforms.uAccentColor.value.set(accentColor);
@@ -1971,8 +2069,8 @@ function PulseScene() {
   });
 
   return (
-    <mesh position={[0,0,-3]}>
-      <planeGeometry args={[22, 12]} />
+    <mesh position={[0,0,-12]}>
+      <planeGeometry args={[90, 54]} />
       <shaderMaterial 
         ref={matRef}
         vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
@@ -1982,6 +2080,8 @@ function PulseScene() {
           uBass: { value: 0 },
           uBeat: { value: 0 },
           uTreble: { value: 0 },
+          uEnergy: { value: 0 },
+          uAspect: { value: size.width / Math.max(size.height, 1) },
           uColor: { value: new THREE.Color(baseColor) },
           uSecondaryColor: { value: new THREE.Color(secondaryColor) },
           uAccentColor: { value: new THREE.Color(accentColor) },
@@ -2185,7 +2285,7 @@ function RandomGlassBlocksScene() {
   const paintTimeRef = useRef(0);
   const mouseMotionRef = useRef(new THREE.Vector2(0, 0));
   const { textInput, textColor, textFontSize, textLetterSpacing, textFontWeight, speed, chaos } = useStore();
-  const displayText = (textInput || 'NEONPULSE').toUpperCase();
+  const displayText = textInput.trim().toUpperCase();
   const textTexture = useCleanTextTexture(displayText, false, textFontSize * 1.25, textLetterSpacing, textFontWeight);
 
   useFrame((state, delta) => {
@@ -2483,7 +2583,7 @@ function VisualText({ sceneOverride }: { sceneOverride?: string }) {
     }
   });
 
-  if(!textInput.trim() || scene === 'Dumbar' || scene === 'Topology') return null;
+  if(!textInput.trim() || scene === 'Dumbar' || scene === 'Topology' || scene === 'Pulse') return null;
 
   if (scene === 'Void') {
     return (
@@ -2541,22 +2641,26 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
     lastUpdateRef.current = now;
 
     const { energy, beat, bass, subBass, mid, treble, highMid, spectralFlux, transient, spectralCentroid, dynamicRange } = getAudioDriveSnapshot(audioDriveMode);
-    const isReferencePastel = currentScene === 'Void';
-    const morph = autoVjEnabled && audioFxReactive && !isReferencePastel ? 1 : 0;
+    const isDarkSpace = currentScene === 'Void';
+    const isNeonPulse = currentScene === 'Pulse';
+    const morph = autoVjEnabled && audioFxReactive ? 1 : 0;
     
-    const targetBloom = isReferencePastel ? 0 : Math.min(
+    const pulseBloom = 0.85 + (energy * 0.24 + beat * 0.36 + transient * 0.22) * morph;
+    const darkBloom = 0.45 + (energy * 0.18 + beat * 0.22 + treble * 0.16 + transient * 0.2) * morph;
+    const targetBloom = isDarkSpace ? darkBloom : isNeonPulse ? pulseBloom : Math.min(
       1.18,
       bloomIntensity * 0.52 + (energy * 0.08 + beat * 0.08 + treble * 0.05 + spectralFlux * 0.055 + transient * 0.05) * morph
     );
-    const targetSplit = isReferencePastel ? 0.001 : Math.min(
+    const pulseSplit = 0.0025 + (beat * 0.002 + spectralFlux * 0.002) * morph;
+    const targetSplit = isDarkSpace ? 0 : isNeonPulse ? pulseSplit : Math.min(
       0.006,
       rgbSplitAmount * 0.45 + (bass * 0.0008 + subBass * 0.0007 + beat * 0.0008 + highMid * 0.0009 + spectralCentroid * 0.001 + spectralFlux * 0.001) * morph
     );
-    const targetDistortion = isReferencePastel ? 0.015 : Math.min(
+    const targetDistortion = isDarkSpace ? 0 : Math.min(
       0.11,
       distortion * 0.7 + (subBass * 0.035 + bass * 0.024 + mid * 0.022 + dynamicRange * 0.03 + spectralFlux * 0.03 + beat * 0.022) * morph
     );
-    const targetGlitch = !isReferencePastel && glitchActive;
+    const targetGlitch = !isDarkSpace && glitchActive;
 
     const next = {
       bloom: dynamicRef.current.bloom + (targetBloom - dynamicRef.current.bloom) * (reduced ? 0.16 : 0.1),
@@ -2599,11 +2703,21 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
 
 function MusicCameraRig() {
   const { camera } = useThree();
-  const { audioDriveMode, musicCameraEnabled, speed, chaos } = useStore();
+  const { audioDriveMode, currentScene, musicCameraEnabled, speed, chaos } = useStore();
   const lookTarget = useMemo(() => new THREE.Vector3(), []);
   const targetPosition = useMemo(() => new THREE.Vector3(0, 0, 5), []);
 
   useFrame((state) => {
+    if (currentScene === 'Pulse') {
+      camera.position.lerp(targetPosition.set(0, 0, 5), 0.16);
+      camera.lookAt(0, 0, 0);
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov += (60 - camera.fov) * 0.12;
+        camera.updateProjectionMatrix();
+      }
+      return;
+    }
+
     const { bass, subBass, mid, treble, beat, energy } = getAudioDriveSnapshot(audioDriveMode);
     const amount = musicCameraEnabled ? 0.8 : 0;
     const time = state.clock.elapsedTime * (0.2 + speed * 0.18);
@@ -2674,12 +2788,16 @@ function PulseEnergyOverlay({ sceneOverride }: { sceneOverride?: string }) {
   const scene = sceneOverride || currentScene;
   if (scene !== 'Pulse') return null;
 
-  const displayText = (textInput?.trim() || 'GAFA').toUpperCase();
+  const trimmedText = textInput.trim();
+  if (!trimmedText) return null;
+
+  const displayText = trimmedText.toUpperCase();
   const normalizedStyle = ['Cinematic', 'Massive', 'Glitch', 'Hologram', 'Floating', 'Beat'].includes(textAnimStyle)
     ? textAnimStyle.toLowerCase()
     : 'glitch';
+  const textLengthScale = Math.max(0.72, Math.min(1, 5 / Math.max(displayText.length, 1)));
   const titleStyle = {
-    '--pulse-title-size': `${Math.max(28, Math.min(148, textFontSize * 18))}px`,
+    '--pulse-title-size': `${Math.max(36, Math.min(224, textFontSize * 30 * textLengthScale))}px`,
     '--pulse-title-weight': textFontWeight,
     '--pulse-title-spacing': `${textLetterSpacing}em`,
     '--pulse-title-speed': `${Math.max(0.35, 1.45 / Math.max(textSpeed, 0.2))}s`,

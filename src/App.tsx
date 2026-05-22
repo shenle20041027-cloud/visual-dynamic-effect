@@ -24,7 +24,12 @@ export default function App() {
   const screenMatch = window.location.pathname.match(/^\/screen\/([^/]+)/);
 
   if (screenMatch) {
-    return <ScreenOutput screenId={decodeURIComponent(screenMatch[1])} />;
+    return (
+      <>
+        <ShowControlBridge showStatus={false} />
+        <ScreenOutput screenId={decodeURIComponent(screenMatch[1])} />
+      </>
+    );
   }
 
   return <ControllerApp />;

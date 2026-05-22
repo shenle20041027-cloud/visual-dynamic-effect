@@ -18,7 +18,7 @@ const scenePresetMap: Record<string, string> = {
   Dumbar: 'Dumbar Base',
 };
 
-export function ShowControlBridge() {
+export function ShowControlBridge({ showStatus = true }: { showStatus?: boolean }) {
   const clientRef = useRef<ReturnType<typeof createShowControlClient> | null>(null);
   const clientIdRef = useRef(`vj-visual-dynamic-effect-${crypto.randomUUID().slice(0, 8)}`);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
@@ -110,6 +110,8 @@ export function ShowControlBridge() {
   useEffect(() => {
     clientRef.current?.publishState(patch);
   }, [patch]);
+
+  if (!showStatus) return null;
 
   return (
     <div className="pointer-events-none fixed left-3 bottom-3 z-[100] rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/60 backdrop-blur">

@@ -3,7 +3,6 @@ import { useStore } from '@/store/useStore';
 import { audioEngine } from '@/lib/AudioEngine';
 import { AudioPanel } from '@/components/layout/AudioPanel';
 import { FxPanel } from '@/components/layout/FxPanel';
-import { ScenePanel } from '@/components/layout/ScenePanel';
 import { TextPanel } from '@/components/layout/TextPanel';
 import { PresetPanel } from '@/components/layout/PresetPanel';
 import { ColorPanel } from '@/components/layout/ColorPanel';
@@ -277,36 +276,12 @@ function ControllerApp() {
                     <Focus size={20} />
                   </button>
                </div>
-               
-               {!isFullscreen && (
-                 <div className="h-[120px] shrink-0 bg-[#050505] relative overflow-hidden border-t border-white/10 flex flex-col">
-                    <div className="flex items-center px-4 h-8 bg-white/5 border-b border-white/5 shrink-0">
-                       <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">{i18n.SCENE_TIMELINE || 'Performance Timeline'}</span>
-                    </div>
-                    <div className="flex-1 p-4 flex flex-col justify-center gap-2 overflow-hidden opacity-50 pointer-events-none">
-                       {/* Decorative timeline tracks */}
-                       <div className="w-full h-4 bg-white/5 rounded-full flex items-center px-2 border border-white/5">
-                         <div className="w-32 h-1.5 bg-blue-500 rounded-full shrink-0" />
-                         <div className="w-16 h-1.5 bg-purple-500 rounded-full shrink-0 ml-4" />
-                       </div>
-                       <div className="w-full h-4 bg-white/5 rounded-full flex items-center px-2 border border-white/5">
-                         <div className="w-8 h-1.5 bg-pink-500 rounded-full shrink-0 ml-8" />
-                         <div className="w-64 h-1.5 bg-green-500 rounded-full shrink-0 ml-12" />
-                       </div>
-                       <div className="w-full h-4 bg-white/5 rounded-full flex items-center px-2 border border-white/5">
-                         <div className="w-full h-1.5 bg-white/20 rounded-full shrink-0 ml-16" />
-                       </div>
-                    </div>
-                 </div>
-               )}
             </div>
 
             {/* RIGHT GLOBAL PANEL */}
             {!isFullscreen && (
               <div className="w-[340px] shrink-0 bg-[#0a0a0c] z-10 flex flex-col border-l border-white/10">
                 <div className="flex-1 overflow-y-auto custom-scrollbar pb-32 pointer-events-auto">
-                   <ScenePanel />
-                   <div className="h-px w-full bg-white/5" />
                    <ColorPanel />
                    <div className="h-px w-full bg-white/5" />
                    <FxPanel />

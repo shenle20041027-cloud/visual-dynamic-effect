@@ -185,6 +185,12 @@ const applyMemoryState = (memory: VisualMemory) => ({
 });
 
 const MEMORY_STORAGE_KEY = 'neonpulse.visualMemories';
+const VISUAL_SETTINGS_STORAGE_KEY = 'neonpulse.visualSettings';
+
+type StoredVisualSettings = Partial<Pick<
+  VisualizerState,
+  'baseColor' | 'secondaryColor' | 'accentColor' | 'bgColor' | 'saturation' | 'contrast' | 'brightness' | 'gamma' | 'exposure'
+>>;
 
 const defaultScreens: VisualScreen[] = SHOW_SCREEN_IDS.map((id, index) => ({
   id,
@@ -214,6 +220,29 @@ const persistMemories = (memories: VisualMemory[]) => {
     // If storage is unavailable, the in-memory session still works.
   }
 };
+
+const loadStoredVisualSettings = (): StoredVisualSettings => {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const raw = window.localStorage.getItem(VISUAL_SETTINGS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+const persistVisualSettings = (settings: StoredVisualSettings) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(VISUAL_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Keep the live session working if local storage is unavailable.
+  }
+};
+
+const storedVisualSettings = loadStoredVisualSettings();
 
 export const useStore = create<VisualizerState>((set) => ({
   audioReady: false,
@@ -269,16 +298,31 @@ export const useStore = create<VisualizerState>((set) => ({
   textLetterSpacing: 0.02,
   setTextEngine: (key, value) => set({ [key]: value }),
 
-  baseColor: '#00f3ff',
-  secondaryColor: '#bf00ff',
-  accentColor: '#ffffff',
-  bgColor: '#030008',
-  saturation: 1.0,
-  contrast: 1.0,
-  brightness: 1.0,
-  gamma: 1.0,
-  exposure: 1.2,
-  setColorGrading: (key, value) => set({ [key]: value as any }),
+  baseColor: storedVisualSettings.baseColor ?? '#00f3ff',
+  secondaryColor: storedVisualSettings.secondaryColor ?? '#bf00ff',
+  accentColor: storedVisualSettings.accentColor ?? '#ffffff',
+  bgColor: storedVisualSettings.bgColor ?? '#030008',
+  saturation: storedVisualSettings.saturation ?? 1.0,
+  contrast: storedVisualSettings.contrast ?? 1.0,
+  brightness: storedVisualSettings.brightness ?? 1.0,
+  gamma: storedVisualSettings.gamma ?? 1.0,
+  exposure: storedVisualSettings.exposure ?? 1.2,
+  setColorGrading: (key, value) => set((state) => {
+    const nextSettings = {
+      baseColor: state.baseColor,
+      secondaryColor: state.secondaryColor,
+      accentColor: state.accentColor,
+      bgColor: state.bgColor,
+      saturation: state.saturation,
+      contrast: state.contrast,
+      brightness: state.brightness,
+      gamma: state.gamma,
+      exposure: state.exposure,
+      [key]: value,
+    };
+    persistVisualSettings(nextSettings);
+    return { [key]: value } as Partial<VisualizerState>;
+  }),
 
   subBassSense: 1.0,
   bassSense: 1.0,

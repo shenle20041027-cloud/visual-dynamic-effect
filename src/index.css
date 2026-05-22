@@ -108,16 +108,17 @@
     position: absolute;
     left: 50%;
     top: 48%;
-    width: min(72vw, 820px);
+    width: min(112vw, 1320px);
     transform: translate(-50%, -50%) skewX(-8deg);
     color: var(--pulse-title-color, #fff8ee);
     font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    font-size: clamp(24px, var(--pulse-title-size, 84px), 148px);
+    font-size: clamp(32px, min(var(--pulse-title-size, 112px), 34vh), 224px);
     font-weight: var(--pulse-title-weight, 900);
     letter-spacing: var(--pulse-title-spacing, 0.02em);
     line-height: 0.9;
     text-align: center;
     text-transform: uppercase;
+    white-space: nowrap;
     opacity: 0.78;
     text-shadow:
       0 0 2px #ffffff,
@@ -136,7 +137,7 @@
   }
 
   .pulse-energy-title--massive {
-    width: min(88vw, 1080px);
+    width: min(118vw, 1440px);
     opacity: 0.92;
     animation-name: pulse-title-massive;
   }
@@ -372,8 +373,10 @@
   }
 
   .screen-canvas canvas {
-    width: 100% !important;
-    height: 100% !important;
+    background: inherit;
+    width: calc(100% + 4px) !important;
+    height: calc(100% + 4px) !important;
+    margin: -2px !important;
     display: block;
   }
 }

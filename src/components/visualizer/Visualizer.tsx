@@ -34,6 +34,26 @@ function getReactiveAudio() {
 const audioMutationFragment = `
   uniform float uTime;
   uniform float uEnergy;
+  uniform float uBass;
+  uniform float uMid;
+  uniform float uTreble;
+  uniform float uBeat;
+  uniform float uHit;
+  uniform float uSceneId;
+  uniform float uLeftBass;
+  uniform float uRightRhythm;
+  uniform float uTopTreble;
+  uniform float uBottomWave;
+  uniform float uCenterVolume;
+  uniform float uDensity;
+  uniform float uMood;
+  uniform float uPeak;
+  uniform float uBuild;
+  uniform float uRelease;
+  uniform float uBreath;
+  uniform float uSway;
+  uniform float uPhrase;
+  uniform float uGravity;
   uniform float uFlux;
   uniform float uTransient;
   uniform float uCentroid;
@@ -41,6 +61,7 @@ const audioMutationFragment = `
   uniform vec3 uBaseColor;
   uniform vec3 uSecondaryColor;
   uniform vec3 uAccentColor;
+  uniform vec3 uBackgroundColor;
   varying vec2 vUv;
 
   float hash(vec2 p) {
@@ -58,31 +79,262 @@ const audioMutationFragment = `
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
   }
 
+  mat2 rot(float a) {
+    float s = sin(a);
+    float c = cos(a);
+    return mat2(c, -s, s, c);
+  }
+
+  float capsule(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+  }
+
+  float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+  }
+
+  vec3 softStageTone(vec3 c, float depth, float lift) {
+    vec3 coolMist = mix(vec3(0.018, 0.034, 0.055), uBackgroundColor, 0.58);
+    vec3 warmMist = mix(vec3(0.48, 0.34, 0.22), uAccentColor, 0.22);
+    vec3 energyFog = mix(uBaseColor, uSecondaryColor, 0.48);
+    float glowStep = smoothstep(0.22, 0.72, lift);
+    float peakStep = smoothstep(0.68, 1.0, lift);
+    vec3 tone = mix(coolMist, c, 0.58 + depth * 0.28);
+    tone = mix(tone, energyFog, glowStep * 0.22);
+    tone = mix(tone, warmMist, uMood * 0.08 + peakStep * 0.08);
+    vec3 pearledPeak = mix(vec3(0.62, 0.69, 0.74), uAccentColor, 0.16);
+    tone = mix(tone, pearledPeak, peakStep * 0.18);
+    tone = tone / (tone + vec3(0.42));
+    float lum = luma(tone);
+    tone = mix(vec3(lum), tone, 1.12);
+    return clamp(tone, vec3(0.0), vec3(0.84));
+  }
+
+  vec3 metallicRamp(float shade, float lift, vec3 energyColor) {
+    vec3 deep = mix(vec3(0.018, 0.026, 0.04), uBackgroundColor, 0.62);
+    vec3 graphite = mix(vec3(0.12, 0.16, 0.19), uBaseColor, 0.28);
+    vec3 blueSteel = mix(vec3(0.24, 0.34, 0.43), uSecondaryColor, 0.34);
+    vec3 softSilver = mix(vec3(0.58, 0.66, 0.72), uAccentColor, 0.12);
+    vec3 tone = mix(deep, graphite, smoothstep(0.0, 0.42, shade));
+    tone = mix(tone, blueSteel, smoothstep(0.18, 0.72, shade + lift * 0.24));
+    tone = mix(tone, energyColor, clamp(0.12 + lift * 0.26 + uCentroid * 0.13, 0.0, 0.42));
+    tone = mix(tone, softSilver, smoothstep(0.62, 1.24, shade + lift * 0.42) * 0.72);
+    tone = mix(tone, uAccentColor, clamp(lift * 0.14 + uTopTreble * 0.08, 0.0, 0.24));
+    return softStageTone(tone, shade, lift);
+  }
+
   void main() {
     vec2 p = vUv * 2.0 - 1.0;
-    float sweepSpeed = 0.18 + uCentroid * 1.45 + uFlux * 0.75;
-    float grainScale = 4.0 + uCentroid * 18.0 + uDynamicRange * 8.0;
-    float field = noise(p * grainScale + vec2(uTime * sweepSpeed, -uTime * (0.12 + uFlux)));
-    float ribbons = sin((p.x * (5.0 + uCentroid * 16.0) + p.y * (2.0 + uDynamicRange * 8.0)) + uTime * (1.5 + uFlux * 4.5));
-    float mask = smoothstep(0.44, 0.94, field + ribbons * (0.18 + uTransient * 0.28));
-    float radial = smoothstep(1.35, 0.15, length(p + vec2(sin(uTime * 0.3) * 0.18, cos(uTime * 0.24) * 0.12)));
-    float intensity = mask * radial * (0.05 + uEnergy * 0.22 + uFlux * 0.34 + uTransient * 0.3);
-    vec3 tone = mix(uBaseColor, uSecondaryColor, clamp(uCentroid * 1.25, 0.0, 1.0));
-    tone = mix(tone, uAccentColor, clamp(uTransient * 0.7, 0.0, 0.55));
-    gl_FragColor = vec4(tone * intensity, clamp(intensity, 0.0, 0.72));
+    p.x *= 1.62;
+    float bodyBreath = sin(uTime * (0.28 + uBreath * 0.28) + uPhrase * 6.283) * (0.018 + uBreath * 0.035);
+    p.x += sin(p.y * 1.25 + uTime * (0.18 + uSway * 0.28) + uPhrase * 3.1) * (0.018 + uSway * 0.045);
+    p.y += bodyBreath - uGravity * 0.045 * smoothstep(-0.2, -1.0, p.y);
+
+    float scene = floor(uSceneId + 0.5);
+    float hit = clamp(uHit, 0.0, 1.0);
+    float slow = uTime * (0.11 + uEnergy * 0.04 + uBuild * 0.045);
+    vec3 energyColor = mix(uBaseColor, uSecondaryColor, clamp(0.18 + uCentroid * 0.82, 0.0, 1.0));
+
+    float leftZone = smoothstep(0.85, -1.42, p.x);
+    float rightZone = smoothstep(-0.28, 1.48, p.x);
+    float topZone = smoothstep(-0.04, 0.92, p.y);
+    float bottomZone = smoothstep(0.18, -0.94, p.y);
+    float centerZone = smoothstep(0.95, 0.04, length(p * vec2(0.82, 1.18)));
+    float travellingWave = smoothstep(0.08, 0.0, abs(sin((p.y + 1.0) * 5.4 - uTime * (0.34 + uBottomWave * 1.3) + p.x * 1.15)));
+    float spatialLift = clamp(
+      leftZone * uLeftBass * 0.34 +
+      rightZone * uRightRhythm * 0.32 +
+      topZone * uTopTreble * 0.28 +
+      bottomZone * uBottomWave * (0.2 + travellingWave * 0.38) +
+      centerZone * uCenterVolume * 0.35,
+      0.0,
+      1.0
+    );
+
+    vec3 color = vec3(0.0);
+    float alpha = 0.0;
+
+    for (int i = 0; i < 9; i++) {
+      float fi = float(i);
+      vec2 seed = vec2(hash(vec2(fi, 2.3)), hash(vec2(fi, 9.1)));
+      vec2 center = vec2(seed.x * 3.0 - 1.5, seed.y * 1.72 - 0.86);
+      float entrance = fract(uPhrase + seed.x * 0.72 + seed.y * 0.31 + fi * 0.071);
+      float delayedResponse = smoothstep(0.08, 0.72, entrance) * (1.0 - smoothstep(0.82, 1.0, entrance));
+      float followerResponse = mix(0.48, 1.12, delayedResponse);
+      float bandPick = mod(fi + scene, 3.0);
+      float band = bandPick < 0.5 ? uBass : (bandPick < 1.5 ? uMid : uTreble);
+      float zoneDrive = clamp(
+        smoothstep(0.65, -1.35, center.x) * uLeftBass +
+        smoothstep(-0.35, 1.35, center.x) * uRightRhythm +
+        smoothstep(-0.1, 0.9, center.y) * uTopTreble +
+        smoothstep(0.1, -0.9, center.y) * uBottomWave +
+        smoothstep(0.9, 0.02, length(center)) * uCenterVolume,
+        0.0,
+        1.45
+      );
+      float localImpact = clamp(
+        hit * (0.12 + band * 0.3) * followerResponse +
+        zoneDrive * (0.16 + seed.x * 0.16) +
+        uBuild * (0.07 + delayedResponse * 0.1) +
+        uRelease * delayedResponse * (0.18 + band * 0.2) +
+        uEnergy * 0.07,
+        0.0,
+        1.0
+      );
+      float holdScale = 1.0 + localImpact * (0.1 + uBass * 0.14) + uBreath * 0.035 * sin(uTime * 0.55 + fi);
+
+      if (scene < 0.5) {
+        center += vec2(sin(slow * 2.0 + fi), cos(slow * 1.7 + fi * 1.4)) * (0.07 + uSway * 0.04);
+      } else if (scene < 1.5) {
+        center += vec2(sin(slow + fi * 0.8), cos(slow * 1.3 + fi)) * (0.14 + uBass * 0.04 + uBuild * 0.06);
+      } else if (scene < 2.5) {
+        float a = fi * 0.72 + slow * (0.78 + uRightRhythm * 0.32) + delayedResponse * uRelease * 0.85;
+        center = vec2(cos(a) * (0.36 + seed.x), sin(a) * (0.18 + seed.y * 0.6));
+      } else if (scene < 3.5) {
+        center.y = -0.72 + seed.y * 1.44;
+        center.x += sin(slow * 2.4 + fi) * (0.14 + uMid * 0.09 + delayedResponse * uRelease * 0.1);
+      } else if (scene < 4.5) {
+        center += vec2(sin(slow * 1.1 + fi), sin(slow * 1.35 + fi * 1.7)) * (0.1 + uBreath * 0.05 + uGravity * 0.03);
+      } else {
+        center.y += sin(center.x * 2.6 + slow * 2.2) * (0.18 + uSway * 0.08);
+      }
+
+      vec2 q = (p - center) / holdScale;
+      q *= rot((seed.x - 0.5) * 2.8 + sin(slow + fi) * 0.32);
+
+      float body;
+      if (scene < 1.5) {
+        body = smoothstep(0.38 + localImpact * 0.1, 0.04, length(q * vec2(0.72, 1.2)));
+      } else if (scene < 2.5) {
+        body = smoothstep(0.045, 0.0, abs(length(q) - (0.24 + seed.x * 0.18 + localImpact * 0.08)));
+      } else if (scene < 3.5) {
+        body = smoothstep(0.028 + uMid * 0.01, 0.0, abs(capsule(q, vec2(-0.62, 0.0), vec2(0.62, 0.0), 0.016 + localImpact * 0.012)));
+      } else if (scene < 4.5) {
+        float rings = sin(length(q * vec2(1.35, 0.82)) * (19.0 + seed.x * 9.0) - uTime * (0.8 + uBass * 1.8));
+        body = smoothstep(0.94 - localImpact * 0.1, 1.0, rings) * smoothstep(0.92, 0.05, length(q));
+      } else {
+        body = smoothstep(0.035, 0.0, abs(sin((q.x * 4.0 + q.y * 2.4) + slow * 5.0))) * smoothstep(0.75, 0.05, length(q));
+      }
+
+      float edge = smoothstep(0.045, 0.0, abs(length(q * vec2(0.72, 1.2)) - (0.22 + localImpact * 0.08)));
+      float ripple = smoothstep(0.035, 0.0, abs(sin(length(q) * (18.0 + seed.x * 18.0) - uTime * (0.82 + band * 1.55) - delayedResponse * uRelease * 2.4)));
+      ripple *= smoothstep(0.92, 0.05, length(q)) * (0.12 + uBass * 0.3 + uBeat * 0.22 + uRelease * delayedResponse * 0.22);
+      float grain = noise(q * (12.0 + seed.x * 12.0) + uTime * 0.08);
+      float textureFlow = noise(q * (5.0 + uDensity * 9.0) + vec2(uTime * (0.06 + uMood * 0.14), -uTime * 0.05));
+      float highlight = clamp(body * (0.14 + localImpact * 0.26 + zoneDrive * 0.1 + uBuild * 0.08) + edge * 0.42 + ripple * 0.28 + grain * body * 0.12 + textureFlow * body * uTopTreble * 0.12 + uRelease * delayedResponse * edge * 0.18, 0.0, 0.86);
+
+      vec3 mat = metallicRamp(body + edge * 0.85 + grain * 0.14 + zoneDrive * 0.08, highlight, energyColor);
+      color += mat * (body * 0.22 + edge * 0.46 + ripple * 0.34 + textureFlow * body * 0.08 + uBuild * body * 0.045);
+      alpha += body * 0.09 + edge * 0.24 + ripple * 0.14 + delayedResponse * uRelease * edge * 0.055;
+    }
+
+    float trackNoise = noise(p * (2.5 + scene) + vec2(uTime * 0.06, -uTime * 0.05));
+    float track = smoothstep(0.93, 1.0, sin(p.x * (4.0 + scene * 1.1 + uDensity * 1.2) + p.y * 2.1 + trackNoise * 1.4 + uTime * (0.2 + uRightRhythm * 0.24 + uBuild * 0.12)));
+    vec3 trackColor = metallicRamp(trackNoise + spatialLift * 0.22, 0.16 + uTopTreble * 0.18 + spatialLift * 0.24, energyColor);
+    color += trackColor * track * (0.018 + uEnergy * 0.026 + spatialLift * 0.05);
+    alpha += track * (0.024 + uEnergy * 0.026 + spatialLift * 0.045);
+
+    vec3 regionWash = softStageTone(mix(uBackgroundColor, mix(energyColor, uAccentColor, 0.2), 0.16 + uMood * 0.22), spatialLift, uPeak + uBuild * 0.25);
+    color += regionWash * spatialLift * (0.022 + uPeak * 0.028 + uBuild * 0.024);
+    alpha += spatialLift * (0.028 + uBuild * 0.02);
+
+    color = softStageTone(color, spatialLift, uPeak + uRelease * 0.35);
+    alpha = clamp(alpha * (0.66 + uEnergy * 0.18 + uPeak * 0.08 + uBuild * 0.13), 0.0, 0.64);
+    gl_FragColor = vec4(color, alpha);
   }
 `;
 
-function AudioMutationOverlay() {
+const getSceneAudioProfile = (scene: string) => {
+  if (scene === 'Liquid') return 1;
+  if (scene === 'Topology') return 2;
+  if (scene === 'Pulse') return 3;
+  if (scene === 'Void') return 4;
+  if (scene === 'Dumbar') return 5;
+  return 0;
+};
+
+function AudioMutationOverlay({ sceneOverride }: { sceneOverride?: string }) {
   const matRef = useRef<THREE.ShaderMaterial>(null);
-  const { baseColor, secondaryColor, accentColor } = useStore();
+  const impactRef = useRef(0);
+  const holdRef = useRef(0);
+  const spatialRef = useRef({
+    leftBass: 0,
+    rightRhythm: 0,
+    topTreble: 0,
+    bottomWave: 0,
+    centerVolume: 0,
+    density: 0,
+    mood: 0,
+    peak: 0,
+    build: 0,
+    release: 0,
+    breath: 0,
+    sway: 0,
+    phrase: 0,
+    gravity: 0,
+  });
+  const { baseColor, secondaryColor, accentColor, bgColor, currentScene } = useStore();
+  const scene = sceneOverride || currentScene;
 
   useFrame((state) => {
     if (!matRef.current) return;
-    const { energy, spectralFlux, transient, spectralCentroid, dynamicRange } = getReactiveAudio();
+    const { volume, subBass, bass, lowMid, mid, highMid, treble, beat, energy, spectralFlux, transient, spectralCentroid, dynamicRange } = getReactiveAudio();
     const uniforms = matRef.current.uniforms;
+    const incomingHit = Math.max(beat, transient * 0.8, spectralFlux * 0.55, bass * 0.45);
+    impactRef.current = Math.max(incomingHit, impactRef.current * 0.9);
+    holdRef.current += (impactRef.current - holdRef.current) * (incomingHit > holdRef.current ? 0.18 : 0.055);
+    const lowEnergy = Math.max(subBass * 0.9, bass);
+    const rhythmDensity = Math.max(beat * 0.74, spectralFlux * 0.85, transient * 0.72, mid * 0.38);
+    const detailEnergy = Math.max(treble, highMid * 0.82, spectralCentroid * 0.42);
+    const bodyEnergy = Math.max(volume, energy * 0.85);
+    const spaceWave = Math.max(dynamicRange * 0.55, lowMid * 0.48, spectralFlux * 0.38);
+    const peak = Math.max(incomingHit, bodyEnergy * 0.5);
+    const mood = Math.max(0, Math.min(1, spectralCentroid * 0.58 + dynamicRange * 0.22 + detailEnergy * 0.2));
+    const density = Math.max(0, Math.min(1, spectralFlux * 0.6 + transient * 0.25 + mid * 0.22 + highMid * 0.18));
+    const macroEnergy = Math.max(0, Math.min(1, bodyEnergy * 0.34 + rhythmDensity * 0.28 + lowEnergy * 0.22 + mood * 0.16));
+    const breath = Math.max(0, Math.min(1, lowEnergy * 0.46 + bodyEnergy * 0.34 + dynamicRange * 0.2));
+    const sway = Math.max(0, Math.min(1, mid * 0.42 + lowMid * 0.25 + rhythmDensity * 0.24 + spectralFlux * 0.12));
+    const gravity = Math.max(0, Math.min(1, subBass * 0.62 + bass * 0.28 + beat * 0.1));
+    const spatial = spatialRef.current;
+    spatial.leftBass += (lowEnergy - spatial.leftBass) * (lowEnergy > spatial.leftBass ? 0.16 : 0.045);
+    spatial.rightRhythm += (rhythmDensity - spatial.rightRhythm) * (rhythmDensity > spatial.rightRhythm ? 0.2 : 0.06);
+    spatial.topTreble += (detailEnergy - spatial.topTreble) * (detailEnergy > spatial.topTreble ? 0.18 : 0.075);
+    spatial.bottomWave += (spaceWave - spatial.bottomWave) * (spaceWave > spatial.bottomWave ? 0.11 : 0.04);
+    spatial.centerVolume += (bodyEnergy - spatial.centerVolume) * (bodyEnergy > spatial.centerVolume ? 0.13 : 0.05);
+    spatial.density += (density - spatial.density) * 0.12;
+    spatial.mood += (mood - spatial.mood) * 0.055;
+    spatial.peak = Math.max(peak, spatial.peak * 0.88);
+    spatial.build += (macroEnergy - spatial.build) * (macroEnergy > spatial.build ? 0.025 : 0.007);
+    spatial.release = Math.max(peak * (0.55 + spatial.build * 0.45), spatial.release * 0.9);
+    spatial.breath += (breath - spatial.breath) * (breath > spatial.breath ? 0.085 : 0.028);
+    spatial.sway += (sway - spatial.sway) * (sway > spatial.sway ? 0.07 : 0.035);
+    spatial.gravity += (gravity - spatial.gravity) * (gravity > spatial.gravity ? 0.1 : 0.026);
+    spatial.phrase = (spatial.phrase + 0.0018 + spatial.density * 0.0035 + spatial.build * 0.0022 + spatial.release * 0.0025) % 1;
     uniforms.uTime.value = state.clock.elapsedTime;
     uniforms.uEnergy.value += (energy - uniforms.uEnergy.value) * 0.12;
+    uniforms.uBass.value += (bass - uniforms.uBass.value) * 0.16;
+    uniforms.uMid.value += (Math.max(mid, lowMid) - uniforms.uMid.value) * 0.14;
+    uniforms.uTreble.value += (Math.max(treble, highMid) - uniforms.uTreble.value) * 0.18;
+    uniforms.uBeat.value += (beat - uniforms.uBeat.value) * 0.18;
+    uniforms.uHit.value = holdRef.current;
+    uniforms.uSceneId.value = getSceneAudioProfile(scene);
+    uniforms.uLeftBass.value = spatial.leftBass;
+    uniforms.uRightRhythm.value = spatial.rightRhythm;
+    uniforms.uTopTreble.value = spatial.topTreble;
+    uniforms.uBottomWave.value = spatial.bottomWave;
+    uniforms.uCenterVolume.value = spatial.centerVolume;
+    uniforms.uDensity.value = spatial.density;
+    uniforms.uMood.value = spatial.mood;
+    uniforms.uPeak.value = spatial.peak;
+    uniforms.uBuild.value = spatial.build;
+    uniforms.uRelease.value = spatial.release;
+    uniforms.uBreath.value = spatial.breath;
+    uniforms.uSway.value = spatial.sway;
+    uniforms.uPhrase.value = spatial.phrase;
+    uniforms.uGravity.value = spatial.gravity;
     uniforms.uFlux.value += (spectralFlux - uniforms.uFlux.value) * 0.25;
     uniforms.uTransient.value += (transient - uniforms.uTransient.value) * 0.34;
     uniforms.uCentroid.value += (spectralCentroid - uniforms.uCentroid.value) * 0.16;
@@ -90,6 +342,7 @@ function AudioMutationOverlay() {
     uniforms.uBaseColor.value.set(baseColor);
     uniforms.uSecondaryColor.value.set(secondaryColor);
     uniforms.uAccentColor.value.set(accentColor);
+    uniforms.uBackgroundColor.value.set(bgColor);
   });
 
   return (
@@ -102,6 +355,26 @@ function AudioMutationOverlay() {
         uniforms={{
           uTime: { value: 0 },
           uEnergy: { value: 0 },
+          uBass: { value: 0 },
+          uMid: { value: 0 },
+          uTreble: { value: 0 },
+          uBeat: { value: 0 },
+          uHit: { value: 0 },
+          uSceneId: { value: getSceneAudioProfile(scene) },
+          uLeftBass: { value: 0 },
+          uRightRhythm: { value: 0 },
+          uTopTreble: { value: 0 },
+          uBottomWave: { value: 0 },
+          uCenterVolume: { value: 0 },
+          uDensity: { value: 0 },
+          uMood: { value: 0 },
+          uPeak: { value: 0 },
+          uBuild: { value: 0 },
+          uRelease: { value: 0 },
+          uBreath: { value: 0 },
+          uSway: { value: 0 },
+          uPhrase: { value: 0 },
+          uGravity: { value: 0 },
           uFlux: { value: 0 },
           uTransient: { value: 0 },
           uCentroid: { value: 0 },
@@ -109,6 +382,7 @@ function AudioMutationOverlay() {
           uBaseColor: { value: new THREE.Color(baseColor) },
           uSecondaryColor: { value: new THREE.Color(secondaryColor) },
           uAccentColor: { value: new THREE.Color(accentColor) },
+          uBackgroundColor: { value: new THREE.Color(bgColor) },
         }}
         transparent
         depthTest={false}
@@ -800,6 +1074,10 @@ const waterCausticStageFragment = `
   uniform float uTreble;
   uniform float uEnergy;
   uniform float uBeat;
+  uniform vec3 uColor;
+  uniform vec3 uSecondaryColor;
+  uniform vec3 uAccentColor;
+  uniform vec3 uBgColor;
   varying vec2 vUv;
 
   float hash(vec2 p) {
@@ -849,7 +1127,7 @@ const waterCausticStageFragment = `
   }
 
   void main() {
-    vec2 uv = vUv;
+    vec2 uv = clamp(vUv, vec2(-0.04), vec2(1.04));
     vec2 p = uv * 2.0 - 1.0;
     p.x *= 0.72;
 
@@ -862,11 +1140,11 @@ const waterCausticStageFragment = `
     waterP.x += sin(p.y * 3.2 + uTime * 0.26) * (0.045 + uBass * 0.035);
     waterP.y += cos(p.x * 2.7 - uTime * 0.22) * (0.04 + uMid * 0.03);
 
-    vec3 deep = vec3(0.015, 0.18, 0.30);
-    vec3 blue = vec3(0.02, 0.42, 0.62);
-    vec3 aqua = vec3(0.0, 0.76, 0.82);
-    vec3 mint = vec3(0.72, 1.0, 0.86);
-    vec3 foam = vec3(0.92, 1.0, 0.97);
+    vec3 deep = mix(vec3(0.015, 0.18, 0.30), uBgColor, 0.62);
+    vec3 blue = mix(vec3(0.02, 0.42, 0.62), uColor, 0.5);
+    vec3 aqua = mix(vec3(0.0, 0.76, 0.82), uSecondaryColor, 0.48);
+    vec3 mint = mix(vec3(0.72, 1.0, 0.86), uAccentColor, 0.5);
+    vec3 foam = mix(vec3(0.92, 1.0, 0.97), uAccentColor, 0.26);
 
     float depth = smoothstep(-1.1, 0.95, p.y);
     float volume = fbm(waterP * 1.7 + vec2(uTime * 0.03, -uTime * 0.02));
@@ -883,7 +1161,7 @@ const waterCausticStageFragment = `
     col += aqua * broadWave * 0.08;
     col += mint * caustic * (0.42 + uTreble * 0.12 + uBeat * 0.08);
     col += foam * pow(caustic, 2.1) * (0.3 + uEnergy * 0.16);
-    col = mix(col, vec3(0.0, 0.58, 0.65), softSheen * 0.16);
+    col = mix(col, mix(uSecondaryColor, aqua, 0.55), softSheen * 0.2);
 
     for (int i = 0; i < 18; i++) {
       float fi = float(i);
@@ -909,7 +1187,10 @@ const waterCausticStageFragment = `
     col += foam * sparkle * (0.35 + uTreble * 0.2);
 
     float edgeLight = smoothstep(1.7, 0.12, length(p * vec2(0.82, 1.02)));
-    col = mix(vec3(0.0, 0.36, 0.52), col, 0.82 + edgeLight * 0.18);
+    vec3 edgeFill = mix(uBgColor, uColor, 0.42);
+    float edgeGuard = smoothstep(0.0, 0.08, vUv.x) * smoothstep(0.0, 0.08, vUv.y) * smoothstep(0.0, 0.08, 1.0 - vUv.x) * smoothstep(0.0, 0.08, 1.0 - vUv.y);
+    col = mix(edgeFill, col, 0.78 + edgeLight * 0.22);
+    col = mix(edgeFill, col, max(0.35, edgeGuard));
     col = clamp(col, vec3(0.0), vec3(1.0));
     col = pow(col, vec3(0.92));
     gl_FragColor = vec4(col, 1.0);
@@ -1113,7 +1394,7 @@ const cyberFragment = `
 `;
 
 function VoidScene() {
-  const { baseColor, secondaryColor, speed } = useStore();
+  const { baseColor, secondaryColor, accentColor, bgColor, speed } = useStore();
   const stageMatRef = useRef<THREE.ShaderMaterial>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const pointsRef = useRef<THREE.Points>(null);
@@ -1145,6 +1426,8 @@ function VoidScene() {
     stageMatRef.current.uniforms.uBeat.value = beat;
     stageMatRef.current.uniforms.uColor.value.set(baseColor);
     stageMatRef.current.uniforms.uSecondaryColor.value.set(secondaryColor);
+    stageMatRef.current.uniforms.uAccentColor.value.set(accentColor);
+    stageMatRef.current.uniforms.uBgColor.value.set(bgColor);
 
     if(!materialRef.current || !pointsRef.current) return;
     pointsRef.current.rotation.y += delta * 0.03 * speed * (1 + beat * 2.0 + subBass);
@@ -1165,7 +1448,7 @@ function VoidScene() {
   return (
     <group>
       <mesh position={[0, 0, -9]}>
-        <planeGeometry args={[34, 22]} />
+        <planeGeometry args={[42, 28]} />
         <shaderMaterial
           ref={stageMatRef}
           vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
@@ -1179,6 +1462,8 @@ function VoidScene() {
             uBeat: { value: 0 },
             uColor: { value: new THREE.Color(baseColor) },
             uSecondaryColor: { value: new THREE.Color(secondaryColor) },
+            uAccentColor: { value: new THREE.Color(accentColor) },
+            uBgColor: { value: new THREE.Color(bgColor) },
           }}
           depthWrite={false}
         />
@@ -1217,6 +1502,10 @@ const liquidFragment = `
   uniform float uBass;
   uniform float uLowMid;
   uniform float uEnergy;
+  uniform vec3 uBaseColor;
+  uniform vec3 uSecondaryColor;
+  uniform vec3 uAccentColor;
+  uniform vec3 uBgColor;
   varying vec2 vUv;
 
   float hash(vec2 p) {
@@ -1299,11 +1588,10 @@ const liquidFragment = `
     d = max(d, -d_hole); // subtract hole
 
     // Rendering
-    // Background: Mauvey Pink #A8828C
-    vec3 bgCol = vec3(0.66, 0.51, 0.55);
+    vec3 bgCol = mix(vec3(0.66, 0.51, 0.55), uBgColor, 0.62);
     
     // Colors for the shapes
-    vec3 innerCol = vec3(0.0, 0.0, 0.0); // Inside is Black
+    vec3 innerCol = mix(vec3(0.0, 0.0, 0.0), uBaseColor * 0.28, 0.55);
     
     // Stroke / Outlines
     // We want a bright yellow/green core outline, and a purple outer outline
@@ -1317,8 +1605,8 @@ const liquidFragment = `
     float strokeOuter = 1.0 - smoothstep(outlineWidth * 1.8, 0.22 + uBass * 0.08, edgeDistance);
     float ripple = 0.5 + 0.5 * sin(edgeDistance * 36.0 - t * 3.4 + grit * 1.6);
     
-    vec3 neonYellow = vec3(0.8, 1.0, 0.0);
-    vec3 neonPurple = vec3(0.4, 0.0, 1.0);
+    vec3 neonYellow = mix(vec3(0.8, 1.0, 0.0), uAccentColor, 0.62);
+    vec3 neonPurple = mix(vec3(0.4, 0.0, 1.0), uSecondaryColor, 0.68);
     
     vec3 col = mix(bgCol, innerCol, fill);
     col += bgCol * (grit - 0.5) * 0.09;
@@ -1336,7 +1624,7 @@ const liquidFragment = `
 `;
 
 function LiquidScene() {
-  const { speed } = useStore();
+  const { speed, baseColor, secondaryColor, accentColor, bgColor } = useStore();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const liquidTimeRef = useRef(0);
   const liquidSpeedRef = useRef(0.16);
@@ -1361,6 +1649,10 @@ function LiquidScene() {
     uniforms.uBass.value += (bass - uniforms.uBass.value) * 0.075;
     uniforms.uLowMid.value += (lowMid - uniforms.uLowMid.value) * 0.07;
     uniforms.uEnergy.value += (energy - uniforms.uEnergy.value) * 0.06;
+    uniforms.uBaseColor.value.set(baseColor);
+    uniforms.uSecondaryColor.value.set(secondaryColor);
+    uniforms.uAccentColor.value.set(accentColor);
+    uniforms.uBgColor.value.set(bgColor);
   });
 
   return (
@@ -1374,7 +1666,11 @@ function LiquidScene() {
           uTime: { value: 0 },
           uBass: { value: 0 },
           uLowMid: { value: 0 },
-          uEnergy: { value: 0 }
+          uEnergy: { value: 0 },
+          uBaseColor: { value: new THREE.Color(baseColor) },
+          uSecondaryColor: { value: new THREE.Color(secondaryColor) },
+          uAccentColor: { value: new THREE.Color(accentColor) },
+          uBgColor: { value: new THREE.Color(bgColor) },
         }}
         depthWrite={false}
       />
@@ -1593,84 +1889,188 @@ const pulseFragment = `
   uniform float uBass;
   uniform float uBeat;
   uniform float uTreble;
+  uniform float uEnergy;
+  uniform float uAspect;
   uniform vec3 uColor;
+  uniform vec3 uSecondaryColor;
+  uniform vec3 uAccentColor;
+  uniform vec3 uBgColor;
   varying vec2 vUv;
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
   }
 
-  // 3D grid function
-  float drawGrid(vec2 uv, float tilt, float pan) {
-      uv.y -= tilt;
-      if (uv.y < 0.0) return 0.0;
-      float z = 1.0 / uv.y;
-      vec2 gridUv = vec2(uv.x * z + pan, z - uTime * (5.0 + uBass * 10.0));
-      float gridX = abs(fract(gridUv.x * 5.0) - 0.5);
-      float gridY = abs(fract(gridUv.y * 5.0) - 0.5);
-      float lineX = smoothstep(0.1, 0.0, gridX / z * 1.5);
-      float lineY = smoothstep(0.1, 0.0, gridY / z * 1.5);
-      float line = max(lineX, lineY);
-      return line * exp(-z * 0.06);
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      v += noise(p) * a;
+      p = mat2(1.62, -1.07, 1.07, 1.62) * p + 13.7;
+      a *= 0.52;
+    }
+    return v;
+  }
+
+  float softBlob(vec2 p, vec2 c, vec2 r, float wobble) {
+    vec2 q = (p - c) / r;
+    float n = fbm(q * 1.6 + vec2(uTime * 0.08, -uTime * 0.05));
+    q.x += (n - 0.5) * wobble;
+    q.y += (fbm(q.yx * 2.1 - uTime * 0.06) - 0.5) * wobble * 0.75;
+    return smoothstep(1.05, 0.34, length(q));
+  }
+
+  float box(vec2 p, vec2 b) {
+    vec2 d = abs(p) - b;
+    return 1.0 - smoothstep(0.0, 0.018, length(max(d, 0.0)) + min(max(d.x, d.y), 0.0));
+  }
+
+  float segment(vec2 p, vec2 a, vec2 b, float width) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return 1.0 - smoothstep(width, width * 2.8, length(pa - ba * h));
+  }
+
+  float shard(vec2 p, vec2 c, vec2 s, float angle) {
+    float sn = sin(angle);
+    float cs = cos(angle);
+    vec2 q = mat2(cs, -sn, sn, cs) * (p - c);
+    float body = box(q, s);
+    float cutA = smoothstep(-s.x * 0.9, s.x * 0.65, q.x + q.y * 0.42);
+    float cutB = 1.0 - smoothstep(s.x * 0.25, s.x * 1.12, q.x - q.y * 0.36);
+    return body * cutA * cutB;
+  }
+
+  float glitchRun(vec2 p, float y, float width, float seed) {
+    float wave = y + sin(p.x * 7.0 + uTime * (0.8 + seed)) * 0.035;
+    float line = 1.0 - smoothstep(width, width * 3.0, abs(p.y - wave));
+    float cells = step(0.52, hash(floor(vec2((p.x + uTime * (0.55 + seed * 0.2)) * 42.0, seed * 23.0))));
+    float gate = smoothstep(-1.05, -0.42, p.x) * (1.0 - smoothstep(0.42, 1.18, p.x));
+    return line * cells * gate;
   }
 
   void main() {
     vec2 p = vUv * 2.0 - 1.0;
-    
-    // Beat shaking
-    p.y += sin(uTime * 30.0) * 0.02 * uBeat;
-    p.x += cos(uTime * 25.0) * 0.02 * uBeat;
+    p.x *= uAspect;
+    p += vec2(sin(uTime * 1.7) * 0.025, cos(uTime * 1.2) * 0.015) * (uBeat + uBass);
 
-    // Floor & Ceiling Grid
-    float floorGrid = drawGrid(p, -0.4 + uBass * 0.05, 0.0);
-    float ceilGrid = drawGrid(-p, -0.4 + uBass * 0.05, sin(uTime) * 0.2); 
-    
-    // Background pulsing flash
-    vec3 pulseColor = mix(uColor, vec3(1.0, 0.1, 0.5), uBeat);
-    vec3 stageColor = pulseColor * (0.05 + floorGrid * (1.0 + uBass*2.0) + ceilGrid * (1.0 + uBass*2.0));
-    
-    // V-shaped light beams hitting the center stage
-    float beamMask = max(0.0, 1.0 - abs(p.x * 2.0 - p.y) * 2.0) + max(0.0, 1.0 - abs(p.x * -2.0 - p.y) * 2.0);
-    stageColor += pulseColor * beamMask * 0.1 * (1.0 + uBass * 4.0) * exp(-abs(p.y)*2.0);
+    float drift = sin(uTime * 0.18) * 0.18;
+    float field = 0.0;
+    field += softBlob(p, vec2(-0.95 + drift, 0.18), vec2(0.34, 0.18), 0.42);
+    field += softBlob(p, vec2(-0.38 + drift * 0.4, -0.04), vec2(0.50, 0.20), 0.5);
+    field += softBlob(p, vec2(0.28 - drift * 0.35, 0.09), vec2(0.44, 0.19), 0.44);
+    field += softBlob(p, vec2(0.92 - drift * 0.65, -0.02), vec2(0.30, 0.17), 0.38);
+    field += softBlob(p, vec2(-0.78 - drift * 0.45, -0.44), vec2(0.17, 0.10), 0.34);
+    field = clamp(field, 0.0, 1.4);
 
-    // Laser strobe
-    float laserId = floor(p.x * 8.0 + uTime * 6.0);
-    float laser = step(0.9, hash(vec2(laserId, floor(uTime*12.0)))) * step(0.0, p.y + 0.3);
-    stageColor += laser * pulseColor * (0.8 + uBass * 3.0) * exp(-abs(p.y) * 2.0);
+    float tearMask = smoothstep(0.2, 0.82, fbm(p * vec2(2.2, 7.8) + vec2(uTime * 0.12, -uTime * 0.07)));
+    field *= mix(0.48, 1.0, tearMask);
 
-    // Vignette
-    float vignette = length(p);
-    stageColor *= smoothstep(2.5, 0.3, vignette);
-    
-    // Screen scanlines
-    float scanline = sin(vUv.y * 800.0) * 0.04 + 0.96;
-    stageColor *= scanline;
-    
-    // Aggressive noise based on bass
-    float noise = hash(p * 123.0 + uTime) - 0.5;
-    stageColor += noise * 0.2 * (1.0 + uBass * 3.0);
+    float aura = smoothstep(0.08, 0.78, field);
+    float core = smoothstep(0.66, 1.15, field);
+    float torn = fbm(p * vec2(3.4, 8.5) + vec2(uTime * 0.18, -uTime * 0.08));
+    float brokenCore = core * smoothstep(0.18, 0.82, torn + uBass * 0.22);
 
-    gl_FragColor = vec4(stageColor, 1.0);
+    vec3 amber = vec3(0.95, 0.46, 0.16);
+    vec3 gold = vec3(1.0, 0.66, 0.28);
+    vec3 red = vec3(1.0, 0.02, 0.0);
+    vec3 hotRed = vec3(1.0, 0.0, 0.0);
+    vec3 silver = vec3(0.78, 0.9, 0.92);
+    vec3 white = vec3(1.0);
+
+    vec3 col = vec3(0.0);
+    col += amber * aura * (0.18 + uEnergy * 0.08);
+    col += gold * core * (0.18 + uBass * 0.12);
+
+    float edge = smoothstep(0.22, 0.52, field) - smoothstep(0.64, 0.98, field);
+    float redEdge = edge * (0.65 + uBeat * 0.75);
+    col += red * redEdge * 0.62;
+
+    float runs = 0.0;
+    runs += glitchRun(p, 0.19, 0.006 + uTreble * 0.004, 1.0);
+    runs += glitchRun(p, 0.04, 0.005 + uBass * 0.005, 2.7);
+    runs += glitchRun(p, -0.12, 0.005, 4.4);
+    runs += glitchRun(p, -0.31, 0.004, 6.1);
+    runs *= smoothstep(0.38, 0.92, field + fbm(p * 1.5) * 0.22);
+    col += hotRed * runs * (0.46 + uBass * 0.52);
+    col += gold * runs * 0.08;
+
+    float micro = 0.0;
+    for (int i = 0; i < 4; i++) {
+      float fi = float(i);
+      vec2 c = vec2(hash(vec2(fi, 1.7)) * 2.35 - 1.18, hash(vec2(fi, 9.1)) * 0.92 - 0.46);
+      c.x += sin(uTime * (0.18 + hash(vec2(fi, 4.0)) * 0.3) + fi) * 0.18;
+      float len = 0.025 + hash(vec2(fi, 2.3)) * 0.09;
+      float on = step(0.48, hash(floor(vec2(fi * 4.3, uTime * (5.0 + uBeat * 8.0)))));
+      micro += segment(p, c - vec2(len, 0.0), c + vec2(len, 0.0), 0.004 + hash(vec2(fi, 3.1)) * 0.004) * on;
+    }
+    col += mix(gold, red, 0.68) * micro * (0.03 + aura * 0.18);
+
+    float metal = 0.0;
+    metal += shard(p, vec2(-0.82 + drift * 0.2, 0.18), vec2(0.16, 0.045), -0.18);
+    metal += shard(p, vec2(-0.24 - drift * 0.2, -0.18), vec2(0.20, 0.038), 0.08);
+    metal += shard(p, vec2(0.30 + drift * 0.15, 0.16), vec2(0.17, 0.04), -0.1);
+    metal += shard(p, vec2(0.78 - drift * 0.2, -0.05), vec2(0.18, 0.07), 0.23);
+    metal += shard(p, vec2(-0.55, -0.42), vec2(0.10, 0.035), -0.22);
+    metal += shard(p, vec2(0.04 + drift * 0.08, -0.02), vec2(0.14, 0.032), 0.18);
+    float metalMask = clamp(metal, 0.0, 1.0);
+    float bevel = smoothstep(0.2, 0.96, fbm(p * 14.0 + uTime * 0.25));
+    col += red * metalMask * (0.42 + uBeat * 0.22);
+    col += mix(silver * 0.5, white * 0.74, bevel) * metalMask * (0.42 + uTreble * 0.16);
+    col += red * smoothstep(0.0, 0.7, metal) * 0.18;
+
+    float flash = uBeat * step(0.72, hash(vec2(floor(uTime * 14.0), 91.0)));
+    col += white * flash * aura * 0.04;
+    col += red * flash * edge * 0.22;
+
+    float grain = hash(vUv * vec2(760.0, 430.0) + floor(uTime * 28.0)) - 0.5;
+    col += grain * (0.022 + uBass * 0.035);
+    float scan = 0.965 + sin(vUv.y * 720.0 + uTime * 14.0) * 0.025;
+    col *= scan;
+
+    float vignette = smoothstep(1.75, 0.24, length(p * vec2(0.78, 1.08)));
+    col *= vignette;
+    col = pow(max(col, vec3(0.0)), vec3(0.82));
+
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 function PulseScene() {
   const matRef = useRef<THREE.ShaderMaterial>(null);
-  const { baseColor } = useStore();
+  const { baseColor, secondaryColor, accentColor, bgColor } = useStore();
+  const { size } = useThree();
 
   useFrame((state) => {
     if(!matRef.current) return;
-    const { bass, treble, beat } = getReactiveAudio();
+    const { bass, treble, beat, energy } = getReactiveAudio();
     matRef.current.uniforms.uTime.value = state.clock.elapsedTime;
     matRef.current.uniforms.uBass.value = bass;
     matRef.current.uniforms.uBeat.value = beat;
     matRef.current.uniforms.uTreble.value = treble;
+    matRef.current.uniforms.uEnergy.value = energy;
+    matRef.current.uniforms.uAspect.value = size.width / Math.max(size.height, 1);
     matRef.current.uniforms.uColor.value.set(baseColor);
+    matRef.current.uniforms.uSecondaryColor.value.set(secondaryColor);
+    matRef.current.uniforms.uAccentColor.value.set(accentColor);
+    matRef.current.uniforms.uBgColor.value.set(bgColor);
   });
 
   return (
-    <mesh position={[0,0,-3]}>
-      <planeGeometry args={[22, 12]} />
+    <mesh position={[0,0,-12]}>
+      <planeGeometry args={[90, 54]} />
       <shaderMaterial 
         ref={matRef}
         vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
@@ -1680,7 +2080,12 @@ function PulseScene() {
           uBass: { value: 0 },
           uBeat: { value: 0 },
           uTreble: { value: 0 },
-          uColor: { value: new THREE.Color() }
+          uEnergy: { value: 0 },
+          uAspect: { value: size.width / Math.max(size.height, 1) },
+          uColor: { value: new THREE.Color(baseColor) },
+          uSecondaryColor: { value: new THREE.Color(secondaryColor) },
+          uAccentColor: { value: new THREE.Color(accentColor) },
+          uBgColor: { value: new THREE.Color(bgColor) },
         }}
         transparent
         depthWrite={false}
@@ -1880,7 +2285,7 @@ function RandomGlassBlocksScene() {
   const paintTimeRef = useRef(0);
   const mouseMotionRef = useRef(new THREE.Vector2(0, 0));
   const { textInput, textColor, textFontSize, textLetterSpacing, textFontWeight, speed, chaos } = useStore();
-  const displayText = (textInput || 'NEONPULSE').toUpperCase();
+  const displayText = textInput.trim().toUpperCase();
   const textTexture = useCleanTextTexture(displayText, false, textFontSize * 1.25, textLetterSpacing, textFontWeight);
 
   useFrame((state, delta) => {
@@ -2118,7 +2523,7 @@ const chromeTextFragment = `
 function VisualText({ sceneOverride }: { sceneOverride?: string }) {
   const textRef = useRef<THREE.Mesh>(null);
   const chromeMatRef = useRef<THREE.ShaderMaterial>(null);
-  const { currentScene, textInput, textAnimStyle, textGlow, textSpeed, textReactive, baseColor, textFontSize, textLetterSpacing, textFontWeight } = useStore();
+  const { currentScene, textInput, textAnimStyle, textGlow, textSpeed, textReactive, textColor, textFontSize, textLetterSpacing, textFontWeight } = useStore();
   const scene = sceneOverride || currentScene;
 
   const displayText = textInput.toUpperCase();
@@ -2150,17 +2555,14 @@ function VisualText({ sceneOverride }: { sceneOverride?: string }) {
       textRef.current.position.y = Math.sin(t) * 0.2;
       textRef.current.rotation.set(0,0,0);
     } else if (textAnimStyle === 'Glitch') {
-      textRef.current.scale.setScalar(1 + react);
+      textRef.current.scale.setScalar(1 + react * 0.34);
       textRef.current.rotation.set(0,0,0);
-      if(Math.random() > 0.8 || beat > 0.5) {
-        textRef.current.position.x = (Math.random()-0.5)*0.5 * react;
-      } else {
-        textRef.current.position.x = 0;
-      }
+      textRef.current.position.x = Math.sin(t * 5.1) * react * 0.08 + Math.sin(t * 1.7) * beat * 0.05;
+      textRef.current.position.y = Math.cos(t * 3.3) * react * 0.035;
     } else if (textAnimStyle === 'Beat') {
-      textRef.current.scale.setScalar(1.5 + (react * 1.5) + (beat * 1.0));
-      textRef.current.position.set(0, 0, 1 + bass * 2.0);
-      textRef.current.rotation.z = Math.sin(t * 10.0) * 0.05 * beat;
+      textRef.current.scale.setScalar(1.5 + (react * 0.72) + (beat * 0.32));
+      textRef.current.position.set(0, Math.sin(t * 1.4) * react * 0.08, 1 + bass * 0.72);
+      textRef.current.rotation.z = Math.sin(t * 3.2) * 0.025 * beat;
     } else if (textAnimStyle === 'Floating') {
       textRef.current.rotation.z = Math.sin(t * 0.5) * 0.1;
       textRef.current.position.y = Math.sin(t) * 0.5;
@@ -2176,12 +2578,12 @@ function VisualText({ sceneOverride }: { sceneOverride?: string }) {
     // Adjust material properties dynamically if needed
     const mat = textRef.current.material as THREE.MeshBasicMaterial;
     if(mat && mat.color) {
-       mat.color.set(baseColor);
-       mat.color.multiplyScalar(textGlow + beat * 2.0);
+       mat.color.set(textColor);
+       mat.color.multiplyScalar(Math.min(1.35, 0.82 + textGlow * 0.16 + beat * 0.24));
     }
   });
 
-  if(!textInput.trim() || scene === 'Dumbar' || scene === 'Topology') return null;
+  if(!textInput.trim() || scene === 'Dumbar' || scene === 'Topology' || scene === 'Pulse') return null;
 
   if (scene === 'Void') {
     return (
@@ -2208,14 +2610,16 @@ function VisualText({ sceneOverride }: { sceneOverride?: string }) {
   }
 
   return (
-    <mesh ref={textRef} position={[0, 0, 1]}>
+    <mesh ref={textRef} position={[0, 0, 2.2]} renderOrder={60}>
       <planeGeometry args={[20, 10]} />
       <meshBasicMaterial 
         map={tex} 
+        color={textColor}
         transparent 
-        opacity={0.9} 
+        opacity={0.92} 
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
+        depthTest={false}
+        blending={scene === 'Pulse' || scene === 'Cyber' ? THREE.AdditiveBlending : THREE.NormalBlending}
       />
     </mesh>
   );
@@ -2237,13 +2641,26 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
     lastUpdateRef.current = now;
 
     const { energy, beat, bass, subBass, mid, treble, highMid, spectralFlux, transient, spectralCentroid, dynamicRange } = getAudioDriveSnapshot(audioDriveMode);
-    const isReferencePastel = currentScene === 'Void';
-    const morph = autoVjEnabled && audioFxReactive && !isReferencePastel ? 1 : 0;
+    const isDarkSpace = currentScene === 'Void';
+    const isNeonPulse = currentScene === 'Pulse';
+    const morph = autoVjEnabled && audioFxReactive ? 1 : 0;
     
-    const targetBloom = isReferencePastel ? 0 : bloomIntensity + (energy * 0.95 + beat * 1.7 + treble * 0.45 + spectralFlux * 1.1 + transient * 0.85) * morph;
-    const targetSplit = isReferencePastel ? 0.001 : rgbSplitAmount + (bass * 0.014 + subBass * 0.012 + beat * 0.02 + highMid * 0.012 + spectralCentroid * 0.014 + spectralFlux * 0.018 + distortion * 0.006) * morph;
-    const targetDistortion = isReferencePastel ? 0.015 : distortion + (subBass * 0.42 + bass * 0.24 + mid * 0.16 + dynamicRange * 0.34 + spectralFlux * 0.42 + beat * 0.24) * morph;
-    const targetGlitch = !isReferencePastel && (glitchActive || (morph > 0 && (beat > 0.65 || treble > 0.58 || bass > 0.72 || transient > 0.68 || spectralFlux > 0.64)));
+    const pulseBloom = 0.85 + (energy * 0.24 + beat * 0.36 + transient * 0.22) * morph;
+    const darkBloom = 0.45 + (energy * 0.18 + beat * 0.22 + treble * 0.16 + transient * 0.2) * morph;
+    const targetBloom = isDarkSpace ? darkBloom : isNeonPulse ? pulseBloom : Math.min(
+      1.18,
+      bloomIntensity * 0.52 + (energy * 0.08 + beat * 0.08 + treble * 0.05 + spectralFlux * 0.055 + transient * 0.05) * morph
+    );
+    const pulseSplit = 0.0025 + (beat * 0.002 + spectralFlux * 0.002) * morph;
+    const targetSplit = isDarkSpace ? 0 : isNeonPulse ? pulseSplit : Math.min(
+      0.006,
+      rgbSplitAmount * 0.45 + (bass * 0.0008 + subBass * 0.0007 + beat * 0.0008 + highMid * 0.0009 + spectralCentroid * 0.001 + spectralFlux * 0.001) * morph
+    );
+    const targetDistortion = isDarkSpace ? 0 : Math.min(
+      0.11,
+      distortion * 0.7 + (subBass * 0.035 + bass * 0.024 + mid * 0.022 + dynamicRange * 0.03 + spectralFlux * 0.03 + beat * 0.022) * morph
+    );
+    const targetGlitch = !isDarkSpace && glitchActive;
 
     const next = {
       bloom: dynamicRef.current.bloom + (targetBloom - dynamicRef.current.bloom) * (reduced ? 0.16 : 0.1),
@@ -2263,9 +2680,9 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
     <EffectComposer multisampling={0}>
       {currentScene !== 'Void' && !reduced && (
         <Bloom 
-          luminanceThreshold={0.2} 
-          luminanceSmoothing={0.9} 
-          intensity={dynamicBloom} 
+          luminanceThreshold={0.58} 
+          luminanceSmoothing={0.96} 
+          intensity={dynamicBloom * 0.72} 
           mipmapBlur
         />
       )}
@@ -2278,7 +2695,7 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
           ratio={0.85}
         />
       )}
-      <ChromaticAberration offset={new THREE.Vector2(reduced ? dynamicSplit * 0.75 : dynamicSplit, reduced ? dynamicSplit * 0.75 : dynamicSplit)} />
+      <ChromaticAberration offset={new THREE.Vector2(reduced ? dynamicSplit * 0.45 : dynamicSplit * 0.58, reduced ? dynamicSplit * 0.45 : dynamicSplit * 0.58)} />
       {currentScene !== 'Void' && !reduced && <Vignette eskil={false} offset={0.1} darkness={1.1} />}
     </EffectComposer>
   );
@@ -2286,11 +2703,21 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
 
 function MusicCameraRig() {
   const { camera } = useThree();
-  const { audioDriveMode, musicCameraEnabled, speed, chaos } = useStore();
+  const { audioDriveMode, currentScene, musicCameraEnabled, speed, chaos } = useStore();
   const lookTarget = useMemo(() => new THREE.Vector3(), []);
   const targetPosition = useMemo(() => new THREE.Vector3(0, 0, 5), []);
 
   useFrame((state) => {
+    if (currentScene === 'Pulse') {
+      camera.position.lerp(targetPosition.set(0, 0, 5), 0.16);
+      camera.lookAt(0, 0, 0);
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov += (60 - camera.fov) * 0.12;
+        camera.updateProjectionMatrix();
+      }
+      return;
+    }
+
     const { bass, subBass, mid, treble, beat, energy } = getAudioDriveSnapshot(audioDriveMode);
     const amount = musicCameraEnabled ? 0.8 : 0;
     const time = state.clock.elapsedTime * (0.2 + speed * 0.18);
@@ -2339,7 +2766,7 @@ function AudioMorphTone() {
 
     const { bass, treble, energy, beat } = getAudioDriveSnapshot(audioDriveMode);
     pulseColor.set(treble > bass ? secondaryColor : baseColor);
-    targetColor.copy(quietColor).lerp(pulseColor, Math.min(0.45, energy * 0.28 + beat * 0.16));
+    targetColor.copy(quietColor).lerp(pulseColor, Math.min(0.11, energy * 0.045 + beat * 0.022));
     scene.background = targetColor.clone();
   });
 
@@ -2361,12 +2788,16 @@ function PulseEnergyOverlay({ sceneOverride }: { sceneOverride?: string }) {
   const scene = sceneOverride || currentScene;
   if (scene !== 'Pulse') return null;
 
-  const displayText = (textInput?.trim() || 'GAFA').toUpperCase();
+  const trimmedText = textInput.trim();
+  if (!trimmedText) return null;
+
+  const displayText = trimmedText.toUpperCase();
   const normalizedStyle = ['Cinematic', 'Massive', 'Glitch', 'Hologram', 'Floating', 'Beat'].includes(textAnimStyle)
     ? textAnimStyle.toLowerCase()
     : 'glitch';
+  const textLengthScale = Math.max(0.72, Math.min(1, 5 / Math.max(displayText.length, 1)));
   const titleStyle = {
-    '--pulse-title-size': `${Math.max(28, Math.min(148, textFontSize * 18))}px`,
+    '--pulse-title-size': `${Math.max(36, Math.min(224, textFontSize * 30 * textLengthScale))}px`,
     '--pulse-title-weight': textFontWeight,
     '--pulse-title-spacing': `${textLetterSpacing}em`,
     '--pulse-title-speed': `${Math.max(0.35, 1.45 / Math.max(textSpeed, 0.2))}s`,
@@ -2478,9 +2909,9 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
 
         if (autoVjEnabled) {
           const { bass, treble, energy, beat, spectralFlux, transient, spectralCentroid } = getAudioDriveSnapshot(audioDriveMode);
-          audioContrast = energy * 0.1 + beat * 0.05 + spectralFlux * 0.12;
-          audioBrightness = bass * 0.06 + beat * 0.05 + transient * 0.07;
-          audioSaturation = treble * 0.28 + energy * 0.1 + spectralCentroid * 0.18;
+          audioContrast = Math.min(0.08, energy * 0.028 + beat * 0.014 + spectralFlux * 0.026);
+          audioBrightness = Math.min(0.035, bass * 0.012 + beat * 0.008 + transient * 0.012);
+          audioSaturation = Math.min(0.16, treble * 0.07 + energy * 0.034 + spectralCentroid * 0.044);
         }
 
         containerRef.current.style.filter = `contrast(${contrast + audioContrast}) brightness(${brightness + audioBrightness}) saturate(${saturation + audioSaturation})`;
@@ -2504,12 +2935,16 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
         camera={{ position: [0, 0, 5], fov: 60 }}
         dpr={isScreenOutput ? [0.75, 1] : [1, 2]}
         gl={{ antialias: !isScreenOutput, alpha: false, powerPreference: 'high-performance' }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = THREE.ACESFilmicToneMapping;
+          gl.toneMappingExposure = 0.82;
+        }}
       >
         <color attach="background" args={[bgColor]} />
         <AudioMorphTone />
         <MusicCameraRig />
         <SceneRouter sceneOverride={sceneOverride} />
-        <AudioMutationOverlay />
+        <AudioMutationOverlay sceneOverride={sceneOverride} />
         <VisualText sceneOverride={sceneOverride} />
         <PostProcessing reduced={isScreenOutput} />
       </Canvas>

@@ -114,7 +114,7 @@ export function ShowControlBridge({ showStatus = true }: { showStatus?: boolean 
   if (!showStatus) return null;
 
   return (
-    <div className="pointer-events-none fixed left-3 bottom-3 z-[100] rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/60 backdrop-blur">
+    <div className="pointer-events-none fixed left-3 bottom-3 z-30 hidden rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/60 backdrop-blur md:block">
       Show API: {status}
     </div>
   );

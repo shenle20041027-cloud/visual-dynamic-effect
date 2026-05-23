@@ -246,6 +246,10 @@ export function MusicProjectBar() {
   const soundEnabledRef = useRef(soundEnabled);
   const volumeRef = useRef(volume);
 
+  const stopMicBeforeMusic = () => {
+    window.dispatchEvent(new Event('vj:stop-mic'));
+  };
+
   const ensureAudio = () => {
     if (!ctxRef.current) {
       ctxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ latencyHint: 'interactive' });
@@ -360,6 +364,7 @@ export function MusicProjectBar() {
   const playUploadedAudio = (buffer = uploadedBuffer) => {
     if (!buffer) return;
     const { ctx, master } = ensureAudio();
+    stopMicBeforeMusic();
     stop();
     stopUploadedAudio();
 
@@ -384,6 +389,7 @@ export function MusicProjectBar() {
   };
 
   const playDirectLinkedAudio = async (url: string) => {
+    stopMicBeforeMusic();
     stop();
     stopUploadedAudio();
 
@@ -394,6 +400,7 @@ export function MusicProjectBar() {
 
     await audio.play();
     setAudioDriveMode('music');
+    stopMicBeforeMusic();
     setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     setIsPlaying(true);
@@ -604,6 +611,7 @@ export function MusicProjectBar() {
     }
 
     setAudioDriveMode('music');
+    stopMicBeforeMusic();
     setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     stepRef.current = 0;
@@ -638,9 +646,20 @@ export function MusicProjectBar() {
     enabledLayersRef.current = preset.enabled;
     setEnabledLayers(preset.enabled);
     setAudioDriveMode('music');
+    stopMicBeforeMusic();
     setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
   };
+
+  useEffect(() => {
+    const handleStopMusic = () => {
+      stopUploadedAudio();
+      stop();
+    };
+
+    window.addEventListener('vj:stop-music', handleStopMusic);
+    return () => window.removeEventListener('vj:stop-music', handleStopMusic);
+  }, []);
 
   useEffect(() => () => {
     stopUploadedAudio();
@@ -648,9 +667,9 @@ export function MusicProjectBar() {
   }, []);
 
   return (
-    <div className="h-[164px] shrink-0 border-b border-white/10 bg-[#050505] px-4 py-3">
-      <div className="flex h-full gap-4 overflow-hidden">
-        <div className="flex w-44 shrink-0 flex-col justify-between">
+    <div className="shrink-0 border-b border-white/10 bg-[#050505] px-4 py-3 md:h-[164px]">
+      <div className="flex h-full min-w-0 flex-col gap-4 overflow-hidden md:flex-row">
+        <div className="flex w-full shrink-0 flex-col gap-3 md:w-44 md:justify-between">
           <div className="flex items-center gap-3 text-white/80">
             <Music2 size={16} className="text-emerald-300" />
             <div>
@@ -660,7 +679,7 @@ export function MusicProjectBar() {
           </div>
           <button
             onClick={togglePlay}
-            className={`flex h-10 items-center justify-center gap-2 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors ${
+            className={`flex min-h-11 md:h-10 items-center justify-center gap-2 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors ${
               isPlaying ? 'bg-red-500 text-white' : 'bg-emerald-400 text-black'
             }`}
           >
@@ -670,7 +689,7 @@ export function MusicProjectBar() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSoundEnabled((value) => !value)}
-              className={`flex h-8 w-10 items-center justify-center rounded-lg border transition-colors ${
+              className={`flex h-11 w-12 md:h-8 md:w-10 items-center justify-center rounded-lg border transition-colors ${
                 soundEnabled ? 'border-emerald-300/40 bg-emerald-300/15 text-emerald-200' : 'border-white/10 bg-white/5 text-white/35'
               }`}
               title={soundEnabled ? 'Sound on' : 'Sound muted'}
@@ -691,7 +710,7 @@ export function MusicProjectBar() {
           <input ref={uploadInputRef} type="file" accept="audio/*" className="hidden" onChange={handleUpload} />
           <button
             onClick={() => uploadInputRef.current?.click()}
-            className="flex h-8 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 text-[9px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex min-h-11 md:h-8 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 text-[9px] font-bold uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 hover:text-white"
             title={uploadedName || 'Upload audio'}
           >
             <Upload size={13} />
@@ -700,34 +719,36 @@ export function MusicProjectBar() {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center">
             <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest text-white/35">Presets</span>
-            {musicPresets.map((preset) => (
-              <button
-                key={preset.id}
-                onClick={() => applyPreset(preset)}
-                className={`h-7 rounded-lg border px-3 text-[9px] font-bold uppercase tracking-widest transition-colors ${
-                  activePresetId === preset.id
-                    ? 'border-emerald-300 bg-emerald-300 text-black'
-                    : 'border-white/10 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                {preset.name}
-              </button>
-            ))}
-            <form onSubmit={handleLinkSubmit} className="ml-auto flex min-w-[280px] max-w-[430px] flex-1 items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 md:flex md:items-center">
+              {musicPresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => applyPreset(preset)}
+                  className={`min-h-11 md:h-7 rounded-lg border px-3 text-[9px] font-bold uppercase tracking-widest transition-colors ${
+                    activePresetId === preset.id
+                      ? 'border-emerald-300 bg-emerald-300 text-black'
+                      : 'border-white/10 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {preset.name}
+                </button>
+              ))}
+            </div>
+            <form onSubmit={handleLinkSubmit} className="flex min-w-0 flex-1 items-center gap-2 md:ml-auto md:min-w-[280px] md:max-w-[430px]">
               <input
                 type="url"
                 value={musicUrl}
                 onChange={(event) => setMusicUrl(event.target.value)}
                 placeholder="Paste music link"
-                className="h-7 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-3 text-[9px] font-bold uppercase tracking-widest text-white/70 outline-none transition-colors placeholder:text-white/25 focus:border-emerald-300/70"
+                className="min-h-11 md:h-7 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-3 text-[10px] md:text-[9px] font-bold uppercase tracking-widest text-white/70 outline-none transition-colors placeholder:text-white/25 focus:border-emerald-300/70"
                 title={linkStatus || 'Paste direct audio URL'}
               />
               <button
                 type="submit"
                 disabled={linkLoading || !musicUrl.trim()}
-                className="flex h-7 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-300/15 text-emerald-200 transition-colors hover:bg-emerald-300 hover:text-black disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
+                className="flex h-11 w-11 md:h-7 md:w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-300/15 text-emerald-200 transition-colors hover:bg-emerald-300 hover:text-black disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
                 title={linkStatus || 'Play music link'}
               >
                 <Link2 size={13} />
@@ -744,12 +765,12 @@ export function MusicProjectBar() {
             ))}
           </div>
 
-          <div className="grid min-w-0 grid-cols-5 gap-2">
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-5">
             {layers.map((layer) => (
               <button
                 key={layer.id}
                 onClick={() => setEnabledLayers((prev) => ({ ...prev, [layer.id]: !prev[layer.id] }))}
-                className={`h-[86px] rounded-lg border p-3 text-left transition-colors ${
+                className={`min-h-[92px] md:h-[86px] rounded-lg border p-3 text-left transition-colors ${
                   enabledLayers[layer.id]
                     ? 'border-white/15 bg-white/10 text-white'
                     : 'border-white/5 bg-white/[0.03] text-white/35'

@@ -6,7 +6,7 @@ export class AudioEngine {
   public dataArray: Uint8Array | null = null;
   public timeDataArray: Uint8Array | null = null;
   public source: MediaStreamAudioSourceNode | null = null;
-  private stream: MediaStream | null = null;
+  public stream: MediaStream | null = null;
   private highPass: BiquadFilterNode | null = null;
   private lowPass: BiquadFilterNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
@@ -53,48 +53,82 @@ export class AudioEngine {
   public isSimulating: boolean = false;
   private simTime: number = 0;
 
+  private resetCurrent() {
+    this.current = {
+      volume: 0,
+      subBass: 0,
+      bass: 0,
+      lowMid: 0,
+      mid: 0,
+      highMid: 0,
+      treble: 0,
+      energy: 0,
+      beat: 0,
+      spectralCentroid: 0,
+      spectralFlux: 0,
+      transient: 0,
+      dynamicRange: 0,
+    };
+    this.energyHistory.fill(0);
+    this.energyIndex = 0;
+    this.adaptivePeak = 0.18;
+    this.previousBands = {
+      subBass: 0,
+      bass: 0,
+      lowMid: 0,
+      mid: 0,
+      highMid: 0,
+      treble: 0,
+    };
+  }
+
+  private async ensureContext(): Promise<AudioContext> {
+    if (!this.context || this.context.state === 'closed') {
+      this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (this.context.state === 'suspended') {
+      await this.context.resume();
+    }
+    return this.context;
+  }
+
   public async initialize(): Promise<void> {
-    if (this.context) return;
+    await this.startMicrophone();
+  }
+
+  public async startMicrophone(): Promise<void> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error('This browser does not support microphone capture.');
+    }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: false,
-          channelCount: 1,
-          sampleRate: 48000,
-          sampleSize: 16,
-        },
-        video: false,
-      });
-      this.stream = stream;
+      const context = await this.ensureContext();
+      this.stopMicrophone(false);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       
-      this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
-      await this.context.resume();
-      
-      this.analyser = this.context.createAnalyser();
+      this.analyser = context.createAnalyser();
       this.analyser.fftSize = 4096;
       this.analyser.smoothingTimeConstant = 0.68;
 
-      this.highPass = this.context.createBiquadFilter();
+      this.highPass = context.createBiquadFilter();
       this.highPass.type = 'highpass';
       this.highPass.frequency.value = 55;
       this.highPass.Q.value = 0.7;
 
-      this.lowPass = this.context.createBiquadFilter();
+      this.lowPass = context.createBiquadFilter();
       this.lowPass.type = 'lowpass';
       this.lowPass.frequency.value = 15500;
       this.lowPass.Q.value = 0.5;
 
-      this.compressor = this.context.createDynamicsCompressor();
+      this.compressor = context.createDynamicsCompressor();
       this.compressor.threshold.value = -42;
       this.compressor.knee.value = 18;
       this.compressor.ratio.value = 3.2;
       this.compressor.attack.value = 0.004;
       this.compressor.release.value = 0.16;
       
-      this.source = this.context.createMediaStreamSource(stream);
+      this.stream = stream;
+      this.source = context.createMediaStreamSource(stream);
       this.source.connect(this.highPass);
       this.highPass.connect(this.lowPass);
       this.lowPass.connect(this.compressor);
@@ -103,11 +137,46 @@ export class AudioEngine {
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       this.timeDataArray = new Uint8Array(this.analyser.fftSize);
       this.isSimulating = false;
+      this.resetCurrent();
     } catch (err) {
-      console.warn('Failed to initialize audio capture. Falling back to simulated audio:', err);
-      this.isSimulating = true;
-      // We don't throw error so the app can continue
+      this.stopMicrophone(false);
+      this.isSimulating = false;
+      throw err;
     }
+  }
+
+  public async resume(): Promise<void> {
+    if (this.context?.state === 'suspended') {
+      await this.context.resume();
+    }
+  }
+
+  public stopMicrophone(closeContext = false) {
+    this.source?.disconnect();
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.highPass?.disconnect();
+    this.lowPass?.disconnect();
+    this.compressor?.disconnect();
+    this.analyser?.disconnect();
+    this.stream = null;
+    this.source = null;
+    this.highPass = null;
+    this.lowPass = null;
+    this.compressor = null;
+    this.analyser = null;
+    this.dataArray = null;
+    this.timeDataArray = null;
+    this.isSimulating = false;
+    this.resetCurrent();
+
+    if (closeContext && this.context) {
+      void this.context.close();
+      this.context = null;
+    }
+  }
+
+  public hasLiveInput(): boolean {
+    return Boolean(this.analyser && this.stream?.getAudioTracks().some((track) => track.readyState === 'live'));
   }
 
   public update(gain: number = 1.0, config?: { subBassSense: number; bassSense: number; midSense: number; trebleSense: number; noiseGate: number; beatMultiplier: number }): void {
@@ -262,20 +331,7 @@ export class AudioEngine {
   }
 
   public destroy() {
-    this.source?.disconnect();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.highPass?.disconnect();
-    this.lowPass?.disconnect();
-    this.compressor?.disconnect();
-    this.analyser?.disconnect();
-    this.context?.close();
-    this.context = null;
-    this.stream = null;
-    this.source = null;
-    this.analyser = null;
-    this.dataArray = null;
-    this.timeDataArray = null;
-    this.isSimulating = false;
+    this.stopMicrophone(true);
   }
 }
 

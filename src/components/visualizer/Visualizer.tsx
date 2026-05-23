@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { EffectComposer, Bloom, Glitch, ChromaticAberration, Vignette } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, Glitch, ChromaticAberration } from '@react-three/postprocessing';
 import { GlitchMode, BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
 import { getAudioDriveSnapshot } from '@/lib/audioDrive';
@@ -680,8 +680,6 @@ const darkSpaceStageFragment = `
     col += mix(rose, cyan, 0.35) * rearHalo * (0.04 + uEnergy * 0.06);
     col += wash * 0.04;
 
-    float vignette = smoothstep(1.58, 0.22, length(stageP));
-    col *= 0.96 + vignette * 0.08;
     float grain = hash(floor(driftUv * vec2(420.0, 260.0)) + floor(uTime * 5.0));
     col = mix(col, col + (grain - 0.5) * 0.18, 0.38);
     col = clamp(col, vec3(0.0), vec3(1.0));
@@ -946,8 +944,6 @@ const darkSpaceChromeStageFragment = `
     float grain = hash(floor(uv * vec2(540.0, 320.0)) + floor(uTime * 8.0));
     col += scan + (grain - 0.5) * 0.006;
 
-    float vignette = smoothstep(1.74, 0.16, length(p * vec2(0.9, 1.08)));
-    col *= 0.42 + vignette * 0.98;
     col = clamp(col, vec3(0.0), vec3(1.12));
     col = pow(col, vec3(0.92));
 
@@ -1377,9 +1373,6 @@ const cyberFragment = `
     }
 
     // Global VFX: Screen static & Scanlines
-    float vignette = length(p * 2.0 - 1.0);
-    finalCol *= smoothstep(2.0, 0.5, vignette);
-    
     float screenScanline = sin(pos.y * 800.0) * 0.05 + 0.95;
     finalCol *= screenScanline;
     
@@ -2040,8 +2033,6 @@ const pulseFragment = `
     float scan = 0.965 + sin(vUv.y * 720.0 + uTime * 14.0) * 0.025;
     col *= scan;
 
-    float vignette = smoothstep(1.75, 0.24, length(p * vec2(0.78, 1.08)));
-    col *= vignette;
     col = pow(max(col, vec3(0.0)), vec3(0.82));
 
     gl_FragColor = vec4(col, 1.0);
@@ -2226,9 +2217,6 @@ const glassTextFragment = `
     col += vec3(0.55) * highlight * edge;
     col -= vec3(0.12) * seam;
     col += vec3(0.18) * border * edge;
-
-    float vignette = smoothstep(0.95, 0.25, length(uv - 0.5));
-    col *= 0.72 + vignette * 0.5;
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -2696,7 +2684,6 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
         />
       )}
       <ChromaticAberration offset={new THREE.Vector2(reduced ? dynamicSplit * 0.45 : dynamicSplit * 0.58, reduced ? dynamicSplit * 0.45 : dynamicSplit * 0.58)} />
-      {currentScene !== 'Void' && !reduced && <Vignette eskil={false} offset={0.1} darkness={1.1} />}
     </EffectComposer>
   );
 }

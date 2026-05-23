@@ -2880,6 +2880,7 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
   } = useStore();
   const labels = screenText[language];
   const containerRef = useRef<HTMLDivElement>(null);
+  const [viewportKey, setViewportKey] = useState(0);
   const isScreenOutput = Boolean(screenIdOverride);
   const effectiveScreenId = screenIdOverride || activeScreenId;
   const activeScreen = visualScreens.find((screen) => screen.id === effectiveScreenId) || visualScreens[0];
@@ -2895,6 +2896,16 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
       : activeScreen?.device === 'projector'
         ? 'inset-x-[8%] inset-y-[12%]'
         : 'inset-4';
+
+  useEffect(() => {
+    const resize = () => setViewportKey((key) => key + 1);
+    window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', resize);
+    return () => {
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('orientationchange', resize);
+    };
+  }, []);
 
   useEffect(() => {
     let frame = 0;
@@ -2930,6 +2941,7 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
       style={{ filter: `contrast(${contrast}) brightness(${brightness}) saturate(${saturation})` }}
     >
       <Canvas
+        key={viewportKey}
         className="screen-canvas !absolute !inset-0 !h-full !w-full"
         style={{ width: '100%', height: '100%' }}
         camera={{ position: [0, 0, 5], fov: 60 }}

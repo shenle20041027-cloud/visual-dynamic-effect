@@ -252,7 +252,7 @@ export const useStore = create<VisualizerState>((set) => ({
   setVisualInputSource: (source) => set({
     visualInputSource: source,
     musicPanelOpen: source === 'music',
-    audioDriveMode: source === 'music' ? 'music' : 'mic',
+    audioDriveMode: source,
     autoVjEnabled: true,
     musicCameraEnabled: source !== 'mic',
   }),

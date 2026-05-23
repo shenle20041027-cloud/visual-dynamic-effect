@@ -1,54 +1,152 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# VAD Visual Dynamic Effect（4302）
 
-# VJ Live Runtime
+这个仓库是现场演出的 VJ 模块。它固定运行于 `4302`，提供 VJ 控制台和可上屏的 `/screen/<screenId>` 输出页面。它不直接读取 DJ，而是通过 4300 总控接收音乐特征和 Visual Control 命令。
 
-This repository contains the现场 VJ 模块 runtime for the show controller and screen outputs.
+## 它在整套系统里的位置
 
-## Runtime Topology
+| 模块 | 端口 | 关系 |
+| --- | --- | --- |
+| 4300 总控 API | `http://localhost:4300` | VJ 的控制、路由、音频信号来源 |
+| 4301 DJ | `http://localhost:4301` | 音乐源，经 4300 转发给 VJ |
+| 4302 VJ | `http://localhost:4302` | 当前模块 |
+| 4303 baofa | `http://localhost:4303` | 与 VJ 共同承接 20 屏路由 |
 
-- Local VJ app port: `4302`
-- Show controller backend: `http://localhost:4300`
-- Show controller websocket: `ws://localhost:4300/ws`
-- Screen sync channel: `/sync` on the same `4302` server
-- Screen pages use `/screen/<screenId>` on the same origin and sync through the same `/sync` websocket
+核心链路：
 
-The app server on `4302` serves the UI, proxies `/api` to `http://localhost:4300`, and keeps `/sync` on the same listener for controller/screen synchronization.
+```text
+DJ 4301 -> 4300 /ws -> VJ 4302
+4300 Visual Control -> control.command -> VJ 4302
+4300 screen route -> /screen/<screenId> -> VJ 输出
+```
 
-## Install And Run
+## 启动
 
-Prerequisite: Node.js
+```bash
+npm install
+npm run dev
+```
 
-1. Install dependencies:
-   `npm install`
-2. Development runtime:
-   `npm run dev`
-3. Build the static runtime:
-   `npm run build`
-4. Start the built runtime:
-   `npm run start`
-5. Full live show flow:
-   `npm run live`
+打开 VJ 控制台：
 
-## Show Usage
+```text
+http://localhost:4302
+```
 
-Use `npm run live` for现场全屏/上屏 operation, or run `npm run build` followed by `npm run start`.
+打开某个上屏输出：
 
-Do not use Vite dev/HMR for the live show surface. The live runtime does not include `/@vite/client` or `__vite_hmr`; it serves only static pages, `/sync`, and the `/api` proxy.
+```text
+http://localhost:4302/screen/A1
+http://localhost:4302/screen/L1
+```
 
-## Controller And Screen Notes
+生产模式：
 
-- The controller connects to `http://localhost:4300` and `ws://localhost:4300/ws`.
-- `/sync` is the shared synchronization channel between the VJ controller and each `/screen/<screenId>` page.
-- If the app cannot reach `4300`, the VJ page still renders and local interaction still works, but SHOW API audio-driven features degrade or stop.
+```bash
+npm run live
+```
 
-## Deployment Notes
+或分步：
 
-Deploying this app to Vercel is not equivalent to the local live runtime.
+```bash
+npm run build
+npm run start
+```
 
-- `server.mjs` is a long-running Express process with a live `/sync` websocket, which does not map cleanly to Vercel static hosting.
-- If only the static build is deployed, `/sync` and the `/api` proxy will not behave the same way they do locally.
-- `localhost:4300` always points to the visitor's own machine, not automatically to the现场 controller.
-- Remote deployment requires a public controller URL and a separate websocket/sync service design.
+类型检查：
 
+```bash
+npm run lint
+```
+
+## 固定端口
+
+VJ 固定使用：
+
+- Node/Vite 服务端口：`4302`
+- `/sync`：继续挂在 `4302`
+- Vite HMR：关闭
+- `/api` 代理目标：`http://localhost:4300`
+
+现场不允许自动漂移端口。若 `4302` 被占用，应先处理占用进程。
+
+## 音频信源
+
+VJ 的推荐信源是 `SHOW API`。
+
+`SHOW API` 的来源不是本地麦克风，而是：
+
+```text
+DJ 4301 -> mixer.audioFrame -> 4300 -> VJ useApiAudioSource
+```
+
+VJ 会优先通过 WebSocket 接收 `mixer.audioFrame`；如果 WebSocket 短暂不可用，会降级轮询：
+
+```text
+GET http://localhost:4300/api/audio-summary
+```
+
+VJ 控制台和 `/screen/<screenId>` 页面都会订阅 API 音频源，因此上屏画面也会跟随 DJ 音乐变化。
+
+## Visual Control
+
+4300 Dashboard 的 Visual Control 会向 VJ 广播：
+
+- `setScene`
+- `setPreset`
+- `setText`
+- `setColors`
+- `setFx`
+- `setAudioDrive`
+- `setFullscreen`
+
+VJ 的控制台和 screen 页面都会挂载 show-control bridge，确保 4300 改视觉时，已经上屏的画面也能响应。
+
+## 屏幕路由
+
+现场人员推荐只打开 4300 入口：
+
+```text
+http://localhost:4300/screen/<screenId>
+```
+
+当 4300 把某个屏幕 owner 设置为 `vj` 时，该屏幕会自动跳转到：
+
+```text
+http://localhost:4302/screen/<screenId>
+```
+
+当 owner 改成 `baofa` 时，VJ screen 会自动跳转到 4303。
+
+## 与 baofa 共存
+
+VJ 不嵌入 baofa，baofa 也不 iframe VJ。两者通过 4300 的屏幕路由共存：
+
+- VJ owner：屏幕打开 VJ screen URL。
+- baofa owner：屏幕打开 baofa screen URL。
+- 4300 负责路由、菜单/debug 可见性、preset 切换。
+
+## Token 说明
+
+如果 4300 设置了 `CONTROL_TOKEN`，VJ 可配置 `VITE_CONTROL_TOKEN`。注意：
+
+- `VITE_` 变量会暴露给浏览器，不是秘密。
+- 本地/LAN 演出时可作为共享口令。
+- 公网部署时不要把真实高权限 token 放到前端变量中。
+
+## Vercel / 远程部署
+
+VJ 可以构建成网页，但默认依赖本地 4300：
+
+```text
+http://localhost:4300
+ws://localhost:4300/ws
+```
+
+部署到 Vercel 后，`localhost` 会变成访问者自己的机器。除非你提供公网可达的 4300 替代服务，否则 VJ 只能作为离线视觉页面，不能参与现场总控联动。
+
+## 开发注意
+
+- 不要把 `/api` proxy 改回其它端口。
+- 不要在现场模式启用 HMR。
+- `tasks/` 和 `docs/` 不提交。
+- 修改 screen 页面时，确认 `/screen/<screenId>` 仍接收 4300 控制与 API 音频。

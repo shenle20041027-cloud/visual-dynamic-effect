@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AudioDriveMode } from '../lib/audioDrive';
+import { SHOW_SCREEN_IDS } from '../lib/screenRoutes';
 
 export type VisualInputSource = 'mic' | 'music' | 'api';
 export type OutputMode = 'mirror' | 'solo' | 'split';
@@ -191,13 +192,13 @@ type StoredVisualSettings = Partial<Pick<
   'baseColor' | 'secondaryColor' | 'accentColor' | 'bgColor' | 'saturation' | 'contrast' | 'brightness' | 'gamma' | 'exposure'
 >>;
 
-const defaultScreens: VisualScreen[] = [
-  { id: 'stage-main', name: 'Main Stage', device: 'stage', scene: 'Cyber', enabled: true },
-  { id: 'projector-left', name: 'Projector L', device: 'projector', scene: 'Topology', enabled: true },
-  { id: 'led-wall', name: 'LED Wall', device: 'led', scene: 'Pulse', enabled: true },
-  { id: 'tablet-booth', name: 'Booth Tablet', device: 'tablet', scene: 'Liquid', enabled: false },
-  { id: 'phone-roam', name: 'Phone View', device: 'phone', scene: 'Void', enabled: false },
-];
+const defaultScreens: VisualScreen[] = SHOW_SCREEN_IDS.map((id, index) => ({
+  id,
+  name: `Show Screen ${id}`,
+  device: index === 0 ? 'stage' : 'led',
+  scene: index % 4 === 0 ? 'Cyber' : index % 4 === 1 ? 'Topology' : index % 4 === 2 ? 'Pulse' : 'Liquid',
+  enabled: true,
+}));
 
 const loadStoredMemories = (): VisualMemory[] => {
   if (typeof window === 'undefined') return [];
@@ -345,7 +346,7 @@ export const useStore = create<VisualizerState>((set) => ({
   audioDriveMode: 'mic',
   visualMemories: loadStoredMemories(),
   visualScreens: defaultScreens,
-  activeScreenId: 'stage-main',
+  activeScreenId: 'A1',
   outputMode: 'mirror',
   screenTransitionStyle: 'crossfade',
   screenTransitionAmount: 0.65,

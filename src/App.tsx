@@ -23,10 +23,21 @@ export default function App() {
   const screenMatch = window.location.pathname.match(/^\/screen\/([^/]+)/);
 
   if (screenMatch) {
-    return <ScreenOutput screenId={decodeURIComponent(screenMatch[1])} />;
+    return <ScreenApp screenId={decodeURIComponent(screenMatch[1])} />;
   }
 
   return <ControllerApp />;
+}
+
+function ScreenApp({ screenId }: { screenId: string }) {
+  useApiAudioSource(true);
+
+  return (
+    <>
+      <ShowControlBridge showStatus={false} />
+      <ScreenOutput screenId={screenId} />
+    </>
+  );
 }
 
 function ControllerApp() {

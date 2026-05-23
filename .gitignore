@@ -8,3 +8,4 @@ coverage/
 .chrome-cdp/
 .npm-cache/
 docs/
+tasks/

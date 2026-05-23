@@ -17,6 +17,7 @@ export type ScreenPresentation = {
 
 const env = (import.meta as any).env || {};
 export const SHOW_BACKEND_URL = String(env.VITE_SHOW_BACKEND_URL || 'http://localhost:4300').replace(/\/$/, '');
+const controlToken = String(env.VITE_CONTROL_TOKEN || '');
 export const BAOFA_SCREEN_BASE_URL = 'http://localhost:4303/screen';
 
 export const SHOW_SCREEN_IDS = [
@@ -36,7 +37,9 @@ export async function fetchScreenState(signal?: AbortSignal): Promise<{
   routes: Record<string, ScreenRoute>;
   presentation: ScreenPresentation;
 }> {
-  const response = await fetch(`${SHOW_BACKEND_URL}/api/state`, { signal });
+  const headers: Record<string, string> = {};
+  if (controlToken) headers['x-control-token'] = controlToken;
+  const response = await fetch(`${SHOW_BACKEND_URL}/api/state`, { headers, signal });
   if (!response.ok) throw new Error(`Show API state failed: ${response.status}`);
   const state = await response.json();
   const presentation = state?.modules?.interaction?.screenPresentation || {};

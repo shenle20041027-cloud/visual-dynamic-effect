@@ -7,9 +7,13 @@ export class AudioEngine {
   public timeDataArray: Uint8Array | null = null;
   public source: MediaStreamAudioSourceNode | null = null;
   public stream: MediaStream | null = null;
+  public activeSourceType: 'none' | 'mic' | 'music' | 'api' = 'none';
   private highPass: BiquadFilterNode | null = null;
   private lowPass: BiquadFilterNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
+  private musicInput: GainNode | null = null;
+  private musicOutput: GainNode | null = null;
+  private musicNodes: AudioNode[] = [];
   
   // Expose analyzed data for Three.js to read synchronously without React state overhead
   public current = {
@@ -92,6 +96,58 @@ export class AudioEngine {
     return this.context;
   }
 
+  private createAnalyser(context: AudioContext) {
+    this.analyser?.disconnect();
+    this.analyser = context.createAnalyser();
+    this.analyser.fftSize = 4096;
+    this.analyser.smoothingTimeConstant = 0.68;
+    this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    this.timeDataArray = new Uint8Array(this.analyser.fftSize);
+  }
+
+  private stopActiveNodes() {
+    this.source?.disconnect();
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.highPass?.disconnect();
+    this.lowPass?.disconnect();
+    this.compressor?.disconnect();
+    this.musicInput?.disconnect();
+    this.musicOutput?.disconnect();
+    this.musicNodes.forEach((node) => {
+      try {
+        if ('stop' in node && typeof (node as any).stop === 'function') {
+          (node as any).stop();
+        }
+      } catch {
+        // Node may already be stopped.
+      }
+      try {
+        node.disconnect();
+      } catch {
+        // Node may already be disconnected.
+      }
+    });
+    this.source = null;
+    this.stream = null;
+    this.highPass = null;
+    this.lowPass = null;
+    this.compressor = null;
+    this.musicInput = null;
+    this.musicOutput = null;
+    this.musicNodes = [];
+  }
+
+  public stopCurrentAudioSource() {
+    this.stopActiveNodes();
+    this.analyser?.disconnect();
+    this.analyser = null;
+    this.dataArray = null;
+    this.timeDataArray = null;
+    this.activeSourceType = 'none';
+    this.isSimulating = false;
+    this.resetCurrent();
+  }
+
   public async initialize(): Promise<void> {
     await this.startMicrophone();
   }
@@ -103,12 +159,9 @@ export class AudioEngine {
 
     try {
       const context = await this.ensureContext();
-      this.stopMicrophone(false);
+      this.stopCurrentAudioSource();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      
-      this.analyser = context.createAnalyser();
-      this.analyser.fftSize = 4096;
-      this.analyser.smoothingTimeConstant = 0.68;
+      this.createAnalyser(context);
 
       this.highPass = context.createBiquadFilter();
       this.highPass.type = 'highpass';
@@ -132,17 +185,74 @@ export class AudioEngine {
       this.source.connect(this.highPass);
       this.highPass.connect(this.lowPass);
       this.lowPass.connect(this.compressor);
-      this.compressor.connect(this.analyser);
+      this.compressor.connect(this.analyser!);
       
-      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-      this.timeDataArray = new Uint8Array(this.analyser.fftSize);
+      this.activeSourceType = 'mic';
       this.isSimulating = false;
       this.resetCurrent();
     } catch (err) {
-      this.stopMicrophone(false);
+      this.stopCurrentAudioSource();
       this.isSimulating = false;
       throw err;
     }
+  }
+
+  public async startMusicSource(volume = 1): Promise<{ context: AudioContext; input: GainNode; output: GainNode }> {
+    const context = await this.ensureContext();
+    this.stopCurrentAudioSource();
+    this.createAnalyser(context);
+    this.musicInput = context.createGain();
+    this.musicOutput = context.createGain();
+    this.musicInput.gain.value = 1;
+    this.musicOutput.gain.value = volume;
+    this.musicInput.connect(this.analyser!);
+    this.musicInput.connect(this.musicOutput);
+    this.musicOutput.connect(context.destination);
+    this.activeSourceType = 'music';
+    this.isSimulating = false;
+    this.resetCurrent();
+    return { context, input: this.musicInput, output: this.musicOutput };
+  }
+
+  public async ensureMusicSource(volume = 1): Promise<{ context: AudioContext; input: GainNode; output: GainNode }> {
+    if (this.activeSourceType === 'music' && this.musicInput && this.musicOutput && this.context) {
+      await this.resume();
+      this.musicOutput.gain.value = volume;
+      return { context: this.context, input: this.musicInput, output: this.musicOutput };
+    }
+    return this.startMusicSource(volume);
+  }
+
+  public setMusicVolume(volume: number) {
+    if (this.musicOutput && this.context) {
+      this.musicOutput.gain.setTargetAtTime(volume, this.context.currentTime, 0.03);
+    }
+  }
+
+  public registerMusicNode(node: AudioNode) {
+    this.musicNodes.push(node);
+  }
+
+  public setExternalSnapshot(next: Partial<typeof this.current>) {
+    if (this.activeSourceType !== 'api') {
+      this.stopCurrentAudioSource();
+      this.activeSourceType = 'api';
+    }
+    this.current = {
+      volume: Math.max(this.current.volume * 0.45, next.volume ?? 0),
+      subBass: Math.max(this.current.subBass * 0.45, next.subBass ?? 0),
+      bass: Math.max(this.current.bass * 0.45, next.bass ?? 0),
+      lowMid: Math.max(this.current.lowMid * 0.45, next.lowMid ?? 0),
+      mid: Math.max(this.current.mid * 0.45, next.mid ?? 0),
+      highMid: Math.max(this.current.highMid * 0.45, next.highMid ?? 0),
+      treble: Math.max(this.current.treble * 0.45, next.treble ?? 0),
+      energy: Math.max(this.current.energy * 0.45, next.energy ?? 0),
+      beat: Math.max(this.current.beat * 0.22, next.beat ?? 0),
+      spectralCentroid: next.spectralCentroid ?? this.current.spectralCentroid,
+      spectralFlux: Math.max(this.current.spectralFlux * 0.22, next.spectralFlux ?? 0),
+      transient: Math.max(this.current.transient * 0.22, next.transient ?? 0),
+      dynamicRange: Math.max(this.current.dynamicRange * 0.45, next.dynamicRange ?? 0),
+    };
   }
 
   public async resume(): Promise<void> {
@@ -152,22 +262,7 @@ export class AudioEngine {
   }
 
   public stopMicrophone(closeContext = false) {
-    this.source?.disconnect();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.highPass?.disconnect();
-    this.lowPass?.disconnect();
-    this.compressor?.disconnect();
-    this.analyser?.disconnect();
-    this.stream = null;
-    this.source = null;
-    this.highPass = null;
-    this.lowPass = null;
-    this.compressor = null;
-    this.analyser = null;
-    this.dataArray = null;
-    this.timeDataArray = null;
-    this.isSimulating = false;
-    this.resetCurrent();
+    this.stopCurrentAudioSource();
 
     if (closeContext && this.context) {
       void this.context.close();
@@ -331,7 +426,11 @@ export class AudioEngine {
   }
 
   public destroy() {
-    this.stopMicrophone(true);
+    this.stopCurrentAudioSource();
+    if (this.context) {
+      void this.context.close();
+      this.context = null;
+    }
   }
 }
 

@@ -58,6 +58,7 @@ function ControllerApp() {
   const [initError, setInitError] = useState('');
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(Boolean(document.fullscreenElement));
   const i18n = t[language];
   useScreenSync('controller');
   useApiAudioSource(visualInputSource === 'api');
@@ -87,14 +88,47 @@ function ControllerApp() {
       animationFrameId = requestAnimationFrame(renderLoop);
     };
 
-    if (audioReady) {
-      renderLoop();
-    }
+    renderLoop();
 
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [audioReady]);
+  }, []);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      document.documentElement.style.setProperty('--vj-vh', `${window.innerHeight}px`);
+      const isLandscape = window.innerWidth > window.innerHeight;
+      if (isLandscape) setMobileControlsOpen(false);
+    };
+    const updateFullscreen = () => setIsBrowserFullscreen(Boolean(document.fullscreenElement));
+    updateViewport();
+    updateFullscreen();
+    window.addEventListener('resize', updateViewport);
+    window.addEventListener('orientationchange', updateViewport);
+    document.addEventListener('fullscreenchange', updateFullscreen);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      window.removeEventListener('orientationchange', updateViewport);
+      document.removeEventListener('fullscreenchange', updateFullscreen);
+    };
+  }, []);
+
+  const toggleFullscreenView = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        useStore.getState().setIsFullscreen(false);
+      } else {
+        await document.documentElement.requestFullscreen();
+        useStore.getState().setIsFullscreen(true);
+        setMobileControlsOpen(false);
+      }
+    } catch {
+      useStore.getState().setIsFullscreen(!isFullscreen);
+      setMobileControlsOpen(false);
+    }
+  };
 
   const getMicErrorMessage = (err: unknown) => {
     const name = err && typeof err === 'object' && 'name' in err ? String((err as any).name) : '';
@@ -134,7 +168,7 @@ function ControllerApp() {
   };
 
   const deactivateMic = () => {
-    audioEngine.stopMicrophone();
+    audioEngine.stopCurrentAudioSource();
     setAudioReady(false);
     if (visualInputSource === 'mic') setVisualInputSource('api');
   };
@@ -144,7 +178,7 @@ function ControllerApp() {
       void activateMic();
       return;
     }
-    audioEngine.stopMicrophone();
+    audioEngine.stopCurrentAudioSource();
     setAudioReady(false);
     setInitError('');
     if (source !== 'music') window.dispatchEvent(new Event('vj:stop-music'));
@@ -159,7 +193,7 @@ function ControllerApp() {
       }
     };
     const handleStopMic = () => {
-      audioEngine.stopMicrophone();
+      audioEngine.stopCurrentAudioSource();
       setAudioReady(false);
       setInitError('');
     };
@@ -185,7 +219,7 @@ function ControllerApp() {
   };
 
   return (
-    <div className="w-screen h-screen bg-[#020202] text-white flex flex-col font-sans overflow-hidden">
+    <div className="w-screen h-[100dvh] min-h-[100svh] bg-[#020202] text-white flex flex-col font-sans overflow-hidden">
       <ShowControlBridge />
       
       {/* Background Ambience */}
@@ -337,8 +371,9 @@ function ControllerApp() {
                  
                  {/* Fullscreen UI trigger */}
                   <button 
-                    onClick={() => useStore.getState().setIsFullscreen(!isFullscreen)}
+                    onClick={toggleFullscreenView}
                     className="absolute bottom-20 right-4 md:bottom-6 md:right-6 z-40 min-h-11 min-w-11 p-3 md:p-4 rounded-full bg-white/10 backdrop-blur-md text-white border border-white/20 shadow-[0_0_30px_rgba(0,0,0,0.5)] md:opacity-0 md:group-hover:opacity-100 hover:scale-110 transition-all hover:bg-white hover:text-black"
+                    title={isBrowserFullscreen || isFullscreen ? 'Exit fullscreen' : 'Fullscreen view'}
                   >
                     <Focus size={20} />
                   </button>

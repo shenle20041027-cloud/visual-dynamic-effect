@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link2, Music2, Play, Square, Upload, Volume2, VolumeX } from 'lucide-react';
-import { setMusicProjectSnapshot } from '@/lib/audioDrive';
+import { audioEngine } from '@/lib/AudioEngine';
 import { useStore } from '@/store/useStore';
 
 type LayerId = 'house' | 'bass' | 'arp' | 'hat' | 'fx';
@@ -234,203 +234,88 @@ export function MusicProjectBar() {
   const masterRef = useRef<GainNode | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const uploadSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const uploadAnalyserRef = useRef<AnalyserNode | null>(null);
-  const uploadFrequencyRef = useRef<Uint8Array | null>(null);
-  const uploadLastEnergyRef = useRef(0);
-  const uploadLastBandsRef = useRef({ subBass: 0, bass: 0, lowMid: 0, mid: 0, highMid: 0, treble: 0 });
+  const linkedElementSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const linkedAudioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<number | null>(null);
-  const uploadAnalysisTimerRef = useRef<number | null>(null);
   const stepRef = useRef(0);
   const activePresetRef = useRef(musicPresets[1]);
   const soundEnabledRef = useRef(soundEnabled);
   const volumeRef = useRef(volume);
 
-  const stopMicBeforeMusic = () => {
-    window.dispatchEvent(new Event('vj:stop-mic'));
-  };
-
-  const ensureAudio = () => {
-    if (!ctxRef.current) {
-      ctxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ latencyHint: 'interactive' });
-      masterRef.current = ctxRef.current.createGain();
-      masterRef.current.gain.value = soundEnabledRef.current ? volumeRef.current : 0;
-      masterRef.current.connect(ctxRef.current.destination);
-    }
-    if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
-    return { ctx: ctxRef.current, master: masterRef.current! };
+  const ensureAudio = async () => {
+    const { context, input } = await audioEngine.ensureMusicSource(soundEnabledRef.current ? volumeRef.current : 0);
+    ctxRef.current = context;
+    masterRef.current = input;
+    return { ctx: context, master: input };
   };
 
   const stopUploadedAudio = () => {
-    if (uploadAnalysisTimerRef.current !== null) {
-      window.clearInterval(uploadAnalysisTimerRef.current);
-      uploadAnalysisTimerRef.current = null;
-    }
     if (uploadSourceRef.current) {
       try {
         uploadSourceRef.current.stop();
       } catch {
         // Already stopped.
       }
-      uploadSourceRef.current.disconnect();
+      try {
+        uploadSourceRef.current.disconnect();
+      } catch {
+        // Already disconnected by the audio source manager.
+      }
       uploadSourceRef.current = null;
     }
+    linkedElementSourceRef.current?.disconnect();
+    linkedElementSourceRef.current = null;
     if (linkedAudioRef.current) {
       linkedAudioRef.current.pause();
       linkedAudioRef.current.src = '';
       linkedAudioRef.current.load();
       linkedAudioRef.current = null;
     }
-    if (uploadAnalyserRef.current) {
-      uploadAnalyserRef.current.disconnect();
-      uploadAnalyserRef.current = null;
-      uploadFrequencyRef.current = null;
-    }
-    uploadLastEnergyRef.current = 0;
-    uploadLastBandsRef.current = { subBass: 0, bass: 0, lowMid: 0, mid: 0, highMid: 0, treble: 0 };
   };
 
-  const analyzeUploadedFrame = () => {
-    const ctx = ctxRef.current;
-    const analyser = uploadAnalyserRef.current;
-    const data = uploadFrequencyRef.current;
-    if (!ctx || !analyser || !data) return;
-
-    analyser.getByteFrequencyData(data);
-    const nyquist = ctx.sampleRate * 0.5;
-    const binHz = nyquist / data.length;
-    const readBand = (fromHz: number, toHz: number) => {
-      const from = Math.max(0, Math.floor(fromHz / binHz));
-      const to = Math.min(data.length - 1, Math.ceil(toHz / binHz));
-      let total = 0;
-      let count = 0;
-      for (let i = from; i <= to; i++) {
-        total += data[i] / 255;
-        count++;
-      }
-      return count > 0 ? total / count : 0;
-    };
-
-    const subBass = Math.min(1, readBand(20, 60) * 2.9);
-    const bass = Math.min(1, readBand(60, 250) * 2.65);
-    const lowMid = Math.min(1, readBand(250, 500) * 2.25);
-    const mid = Math.min(1, readBand(500, 2000) * 2.05);
-    const highMid = Math.min(1, readBand(2000, 6000) * 2.2);
-    const treble = Math.min(1, readBand(6000, 12000) * 2.55);
-    const volume = Math.min(1, subBass * 0.2 + bass * 0.24 + lowMid * 0.18 + mid * 0.18 + highMid * 0.1 + treble * 0.1);
-    const energy = Math.min(1, volume * 0.75 + Math.max(bass, mid, treble) * 0.25);
-    const beatDelta = Math.max(0, energy - uploadLastEnergyRef.current);
-    const beat = bass > 0.28 && beatDelta > 0.08 ? Math.min(1.25, bass * 0.7 + beatDelta * 4) : 0;
-    const lastBands = uploadLastBandsRef.current;
-    const spectralFlux = Math.min(1,
-      Math.max(0, subBass - lastBands.subBass) * 0.8 +
-      Math.max(0, bass - lastBands.bass) +
-      Math.max(0, lowMid - lastBands.lowMid) * 0.7 +
-      Math.max(0, mid - lastBands.mid) * 0.65 +
-      Math.max(0, highMid - lastBands.highMid) * 0.7 +
-      Math.max(0, treble - lastBands.treble) * 0.9
-    );
-    uploadLastBandsRef.current = { subBass, bass, lowMid, mid, highMid, treble };
-
-    let weightedFrequencySum = 0;
-    let audibleSum = 0;
-    for (let i = 0; i < data.length; i++) {
-      const magnitude = data[i] / 255;
-      weightedFrequencySum += magnitude * (i / Math.max(1, data.length - 1));
-      audibleSum += magnitude;
-    }
-    const spectralCentroid = audibleSum > 0 ? weightedFrequencySum / audibleSum : 0;
-    const dynamicRange = Math.min(1, Math.abs((subBass + bass) - (highMid + treble)) * 0.42 + Math.max(bass, mid, treble) * 0.18);
-    const transient = Math.min(1.25, spectralFlux * 0.9 + beatDelta * 2.2);
-    uploadLastEnergyRef.current = uploadLastEnergyRef.current * 0.82 + energy * 0.18;
-
-    setMusicProjectSnapshot({
-      volume,
-      subBass,
-      bass,
-      lowMid,
-      mid,
-      highMid,
-      treble,
-      energy,
-      beat,
-      spectralCentroid,
-      spectralFlux,
-      transient,
-      dynamicRange,
-    });
-  };
-
-  const playUploadedAudio = (buffer = uploadedBuffer) => {
+  const playUploadedAudio = async (buffer = uploadedBuffer) => {
     if (!buffer) return;
-    const { ctx, master } = ensureAudio();
-    stopMicBeforeMusic();
     stop();
     stopUploadedAudio();
+    const { ctx, master } = await ensureAudio();
 
     const source = ctx.createBufferSource();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.68;
     source.buffer = buffer;
     source.loop = true;
-    source.connect(analyser);
-    analyser.connect(master);
+    source.connect(master);
     source.start();
+    audioEngine.registerMusicNode(source);
     uploadSourceRef.current = source;
-    uploadAnalyserRef.current = analyser;
-    uploadFrequencyRef.current = new Uint8Array(analyser.frequencyBinCount);
 
     setAudioDriveMode('music');
     setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     setIsPlaying(true);
-    uploadAnalysisTimerRef.current = window.setInterval(analyzeUploadedFrame, 48);
   };
 
   const playDirectLinkedAudio = async (url: string) => {
-    stopMicBeforeMusic();
     stop();
     stopUploadedAudio();
+    const { ctx, master } = await ensureAudio();
 
     const audio = new Audio(url);
+    audio.crossOrigin = 'anonymous';
     audio.loop = true;
     audio.volume = soundEnabledRef.current ? volumeRef.current : 0;
     linkedAudioRef.current = audio;
+    const elementSource = ctx.createMediaElementSource(audio);
+    elementSource.connect(master);
+    linkedElementSourceRef.current = elementSource;
+    audioEngine.registerMusicNode(elementSource);
 
     await audio.play();
     setAudioDriveMode('music');
-    stopMicBeforeMusic();
     setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     setIsPlaying(true);
     setUploadedName(getLinkLabel(url));
     setUploadedBuffer(null);
     setLinkStatus('Direct audio');
-
-    uploadAnalysisTimerRef.current = window.setInterval(() => {
-      const time = audio.currentTime;
-      const low = Math.pow(Math.max(0, Math.sin(time * 3.1)), 2.4);
-      const mid = Math.pow(Math.max(0, Math.sin(time * 5.4 + 0.7)), 2);
-      const high = Math.pow(Math.max(0, Math.sin(time * 9.2 + 1.4)), 2.1);
-      const beat = low > 0.82 ? 0.95 : 0;
-      const spectralFlux = Math.max(0.08, Math.max(low, mid, high) * 0.5);
-      setMusicProjectSnapshot({
-        volume: 0.26 + low * 0.3 + mid * 0.2 + high * 0.12,
-        subBass: low * 0.9,
-        bass: low,
-        lowMid: mid * 0.7,
-        mid,
-        highMid: high * 0.75,
-        treble: high,
-        energy: 0.22 + low * 0.35 + mid * 0.25 + high * 0.18,
-        beat,
-        spectralCentroid: 0.18 + mid * 0.28 + high * 0.46,
-        spectralFlux,
-        transient: beat > 0 ? 0.85 : spectralFlux * 0.42,
-        dynamicRange: Math.min(1, Math.abs(low - high) * 0.5 + 0.25),
-      });
-    }, 48);
   };
 
   const playLinkedAudio = async () => {
@@ -441,7 +326,7 @@ export function MusicProjectBar() {
     setLinkStatus('Loading link');
     try {
       new URL(url);
-      const { ctx } = ensureAudio();
+      const { ctx } = await ensureAudio();
       const response = await fetch(url, { mode: 'cors' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const arrayBuffer = await response.arrayBuffer();
@@ -449,7 +334,7 @@ export function MusicProjectBar() {
       setUploadedName(getLinkLabel(url));
       setUploadedBuffer(decoded);
       setLinkStatus('Analyzing link');
-      playUploadedAudio(decoded);
+      await playUploadedAudio(decoded);
     } catch {
       try {
         await playDirectLinkedAudio(url);
@@ -476,29 +361,14 @@ export function MusicProjectBar() {
     soundEnabledRef.current = soundEnabled;
     volumeRef.current = volume;
     if (masterRef.current && ctxRef.current) {
-      masterRef.current.gain.setTargetAtTime(soundEnabled ? volume : 0, ctxRef.current.currentTime, 0.03);
+      audioEngine.setMusicVolume(soundEnabled ? volume : 0);
     }
     if (linkedAudioRef.current) linkedAudioRef.current.volume = soundEnabled ? volume : 0;
   }, [soundEnabled, volume]);
 
-  const triggerStep = () => {
-    const { ctx, master } = ensureAudio();
+  const triggerStep = async () => {
+    const { ctx, master } = await ensureAudio();
     const step = stepRef.current;
-    const nextSnapshot = {
-      volume: 0.08,
-      subBass: 0,
-      bass: 0,
-      lowMid: 0,
-      mid: 0,
-      highMid: 0,
-      treble: 0,
-      energy: 0.08,
-      beat: 0,
-      spectralCentroid: 0.28,
-      spectralFlux: 0,
-      transient: 0,
-      dynamicRange: 0.2,
-    };
 
     layers.forEach((layer) => {
       if (!enabledLayersRef.current[layer.id]) return;
@@ -507,65 +377,21 @@ export function MusicProjectBar() {
 
       if (token === 'K') {
         playKick(ctx, master);
-        nextSnapshot.volume = Math.max(nextSnapshot.volume, 0.75);
-        nextSnapshot.subBass = 1;
-        nextSnapshot.bass = 0.9;
-        nextSnapshot.energy = 0.75;
-        nextSnapshot.beat = 1.1;
-        nextSnapshot.spectralFlux = Math.max(nextSnapshot.spectralFlux, 0.82);
-        nextSnapshot.transient = Math.max(nextSnapshot.transient, 1);
-        nextSnapshot.dynamicRange = Math.max(nextSnapshot.dynamicRange, 0.7);
       } else if (token === 'S') {
         playSnare(ctx, master);
-        nextSnapshot.volume = Math.max(nextSnapshot.volume, 0.46);
-        nextSnapshot.mid = Math.max(nextSnapshot.mid, 0.5);
-        nextSnapshot.highMid = Math.max(nextSnapshot.highMid, 0.45);
-        nextSnapshot.energy = Math.max(nextSnapshot.energy, 0.44);
-        nextSnapshot.beat = Math.max(nextSnapshot.beat, 0.55);
-        nextSnapshot.spectralCentroid = Math.max(nextSnapshot.spectralCentroid, 0.52);
-        nextSnapshot.spectralFlux = Math.max(nextSnapshot.spectralFlux, 0.58);
-        nextSnapshot.transient = Math.max(nextSnapshot.transient, 0.68);
       } else if (token === 'H') {
         playHat(ctx, master);
-        nextSnapshot.volume = Math.max(nextSnapshot.volume, 0.32);
-        nextSnapshot.highMid = 0.55;
-        nextSnapshot.treble = 0.9;
-        nextSnapshot.energy = Math.max(nextSnapshot.energy, 0.28);
-        nextSnapshot.spectralCentroid = Math.max(nextSnapshot.spectralCentroid, 0.82);
-        nextSnapshot.spectralFlux = Math.max(nextSnapshot.spectralFlux, 0.52);
-        nextSnapshot.transient = Math.max(nextSnapshot.transient, 0.42);
       } else if (token === 'X' || token === 'Y') {
         playGlitch(ctx, master);
-        nextSnapshot.volume = Math.max(nextSnapshot.volume, 0.42);
-        nextSnapshot.highMid = 0.75;
-        nextSnapshot.treble = 0.85;
-        nextSnapshot.energy = Math.max(nextSnapshot.energy, 0.45);
-        nextSnapshot.beat = Math.max(nextSnapshot.beat, 0.45);
-        nextSnapshot.spectralCentroid = Math.max(nextSnapshot.spectralCentroid, 0.76);
-        nextSnapshot.spectralFlux = Math.max(nextSnapshot.spectralFlux, 0.78);
-        nextSnapshot.transient = Math.max(nextSnapshot.transient, 0.82);
       } else if (noteMap[token]) {
         if (layer.id === 'bass') {
           playBass(ctx, master, noteMap[token]);
-          nextSnapshot.volume = Math.max(nextSnapshot.volume, 0.45);
-          nextSnapshot.bass = Math.max(nextSnapshot.bass, 0.78);
-          nextSnapshot.lowMid = Math.max(nextSnapshot.lowMid, 0.32);
-          nextSnapshot.energy = Math.max(nextSnapshot.energy, 0.48);
-          nextSnapshot.spectralCentroid = Math.max(nextSnapshot.spectralCentroid, 0.32);
-          nextSnapshot.dynamicRange = Math.max(nextSnapshot.dynamicRange, 0.56);
         } else {
           playArp(ctx, master, noteMap[token]);
-          nextSnapshot.volume = Math.max(nextSnapshot.volume, 0.3);
-          nextSnapshot.mid = Math.max(nextSnapshot.mid, 0.72);
-          nextSnapshot.highMid = Math.max(nextSnapshot.highMid, 0.35);
-          nextSnapshot.energy = Math.max(nextSnapshot.energy, 0.36);
-          nextSnapshot.spectralCentroid = Math.max(nextSnapshot.spectralCentroid, 0.56);
-          nextSnapshot.spectralFlux = Math.max(nextSnapshot.spectralFlux, 0.28);
         }
       }
     });
 
-    setMusicProjectSnapshot(nextSnapshot);
     setActiveStep(step);
     stepRef.current = (step + 1) % 16;
   };
@@ -576,21 +402,7 @@ export function MusicProjectBar() {
       timerRef.current = null;
     }
     setIsPlaying(false);
-    setMusicProjectSnapshot({
-      volume: 0,
-      subBass: 0,
-      bass: 0,
-      lowMid: 0,
-      mid: 0,
-      highMid: 0,
-      treble: 0,
-      energy: 0,
-      beat: 0,
-      spectralCentroid: 0,
-      spectralFlux: 0,
-      transient: 0,
-      dynamicRange: 0,
-    });
+    audioEngine.stopCurrentAudioSource();
   };
 
   const togglePlay = () => {
@@ -601,7 +413,7 @@ export function MusicProjectBar() {
     }
 
     if (uploadedBuffer) {
-      playUploadedAudio(uploadedBuffer);
+      void playUploadedAudio(uploadedBuffer);
       return;
     }
 
@@ -611,12 +423,11 @@ export function MusicProjectBar() {
     }
 
     setAudioDriveMode('music');
-    stopMicBeforeMusic();
     setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
     stepRef.current = 0;
-    triggerStep();
-    timerRef.current = window.setInterval(triggerStep, 125);
+    void triggerStep();
+    timerRef.current = window.setInterval(() => void triggerStep(), 125);
     setIsPlaying(true);
   };
 
@@ -624,14 +435,14 @@ export function MusicProjectBar() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const { ctx } = ensureAudio();
+    const { ctx } = await ensureAudio();
     const arrayBuffer = await file.arrayBuffer();
     const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
     setMusicUrl('');
     setLinkStatus('');
     setUploadedName(file.name);
     setUploadedBuffer(decoded);
-    playUploadedAudio(decoded);
+    void playUploadedAudio(decoded);
     event.target.value = '';
   };
 
@@ -646,7 +457,6 @@ export function MusicProjectBar() {
     enabledLayersRef.current = preset.enabled;
     setEnabledLayers(preset.enabled);
     setAudioDriveMode('music');
-    stopMicBeforeMusic();
     setVisualInputSource('music');
     setAutoVjControl('autoVjEnabled', true);
   };

@@ -114,9 +114,46 @@ const pulse = (time: number, rate: number) => {
   return Math.pow(Math.max(0, wave), 2.2);
 };
 
+const withLiveIdleFloor = (snapshot: AudioDriveSnapshot, mode: AudioDriveMode): AudioDriveSnapshot => {
+  if (mode !== 'mic' && mode !== 'music' && mode !== 'api') return snapshot;
+
+  const signal =
+    snapshot.volume +
+    snapshot.subBass +
+    snapshot.bass +
+    snapshot.lowMid +
+    snapshot.mid +
+    snapshot.highMid +
+    snapshot.treble +
+    snapshot.energy;
+
+  if (signal > 0.08) return snapshot;
+
+  const time = typeof performance === 'undefined' ? Date.now() * 0.001 : performance.now() * 0.001;
+  const slow = 0.5 + 0.5 * Math.sin(time * 0.72);
+  const drift = 0.5 + 0.5 * Math.sin(time * 1.17 + 1.4);
+  const sourceLift = mode === 'mic' ? 1.0 : mode === 'api' ? 0.85 : 0.95;
+
+  return {
+    volume: Math.max(snapshot.volume, (0.055 + slow * 0.018) * sourceLift),
+    subBass: Math.max(snapshot.subBass, 0.025 * sourceLift),
+    bass: Math.max(snapshot.bass, (0.036 + slow * 0.014) * sourceLift),
+    lowMid: Math.max(snapshot.lowMid, (0.034 + drift * 0.012) * sourceLift),
+    mid: Math.max(snapshot.mid, (0.038 + drift * 0.012) * sourceLift),
+    highMid: Math.max(snapshot.highMid, 0.026 * sourceLift),
+    treble: Math.max(snapshot.treble, 0.022 * sourceLift),
+    energy: Math.max(snapshot.energy, (0.058 + slow * 0.02) * sourceLift),
+    beat: snapshot.beat,
+    spectralCentroid: Math.max(snapshot.spectralCentroid, 0.28 + drift * 0.08),
+    spectralFlux: Math.max(snapshot.spectralFlux, 0.026 + slow * 0.012),
+    transient: snapshot.transient,
+    dynamicRange: Math.max(snapshot.dynamicRange, 0.24 + drift * 0.08),
+  };
+};
+
 export function getAudioDriveSnapshot(mode: AudioDriveMode): AudioDriveSnapshot {
   if (mode === 'mic' || mode === 'music' || mode === 'api') {
-    return { ...audioEngine.current };
+    return withLiveIdleFloor({ ...audioEngine.current }, mode);
   }
 
   const time = typeof performance === 'undefined' ? Date.now() * 0.001 : performance.now() * 0.001;

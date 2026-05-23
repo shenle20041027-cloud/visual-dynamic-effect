@@ -40,7 +40,6 @@ export function ControlPanel() {
     musicPanelOpen,
     visualMemories,
     setAutoVjControl,
-    setVisualInputSource,
     setMusicPanelOpen,
     saveVisualMemory,
     applyVisualMemory,
@@ -107,6 +106,10 @@ export function ControlPanel() {
     updateMicLevels();
     return () => cancelAnimationFrame(animationFrameId);
   }, [audioDriveMode]);
+
+  const selectVisualInput = (source: 'mic' | 'music' | 'api') => {
+    window.dispatchEvent(new CustomEvent('vj:select-input', { detail: source }));
+  };
 
   return (
     <div className="w-full p-6 flex flex-col gap-4">
@@ -184,8 +187,8 @@ export function ControlPanel() {
             ].map((option) => (
               <button
                 key={option.source}
-                onClick={() => setVisualInputSource(option.source)}
-                className={`h-9 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                onClick={() => selectVisualInput(option.source)}
+                className={`h-11 md:h-9 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors ${
                   visualInputSource === option.source
                     ? 'border-orange-300 bg-orange-300 text-black'
                     : 'border-white/10 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white'
@@ -199,7 +202,7 @@ export function ControlPanel() {
             <button
               type="button"
               onClick={() => setMusicPanelOpen(!musicPanelOpen)}
-              className="h-8 rounded-lg border border-emerald-300/30 bg-emerald-300/10 text-[10px] font-bold uppercase tracking-widest text-emerald-100 hover:bg-emerald-300 hover:text-black"
+              className="h-11 md:h-8 rounded-lg border border-emerald-300/30 bg-emerald-300/10 text-[10px] font-bold uppercase tracking-widest text-emerald-100 hover:bg-emerald-300 hover:text-black"
             >
               {musicPanelOpen ? 'Hide Music Panel' : 'Show Music Panel'}
             </button>

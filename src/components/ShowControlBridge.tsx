@@ -12,6 +12,7 @@ const toNumber = (value: unknown, fallback: number) =>
 const scenePresetMap: Record<string, string> = {
   Cyber: 'Cyberpunk',
   Liquid: 'Liquid Dream',
+  Chromaflux: 'Chromaflux',
   Topology: 'Sonic Topology',
   Pulse: 'Neon Pulse',
   Void: 'Dark Space',

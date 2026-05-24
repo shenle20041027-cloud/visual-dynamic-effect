@@ -457,7 +457,25 @@ export const useStore = create<VisualizerState>((set) => ({
           });
           break;
        case 'Dark Space':
-          set({ currentScene: 'Void', baseColor: '#ffffff', secondaryColor: '#444444', bloomIntensity: 1, textAnimStyle: 'Massive' });
+          set({
+            currentScene: 'Void',
+            baseColor: '#ff1600',
+            secondaryColor: '#28e6ff',
+            accentColor: '#ffffff',
+            bgColor: '#000000',
+            bloomIntensity: 1.35,
+            rgbSplitAmount: 0.0,
+            distortion: 0.08,
+            glitchActive: true,
+            speed: 1.12,
+            chaos: 0.62,
+            textInput: 'play',
+            textColor: '#ffffff',
+            textFontSize: 5.4,
+            textFontWeight: 900,
+            textLetterSpacing: -0.08,
+            textAnimStyle: 'Glitch'
+          });
           break;
        case 'Dumbar Base':
           set({ currentScene: 'Dumbar', baseColor: '#d8d8d8', secondaryColor: '#5f5f5f', bgColor: '#050505', bloomIntensity: 1.15, rgbSplitAmount: 0.0, distortion: 0.03, glitchActive: false, speed: 1.0, chaos: 0.42, contrast: 1.24, saturation: 1.08, brightness: 0.96, musicCameraEnabled: true, audioFxReactive: true });

@@ -432,6 +432,22 @@ export const useStore = create<VisualizerState>((set) => ({
        case 'Liquid Dream':
           set({ currentScene: 'Liquid', baseColor: '#b026ff', secondaryColor: '#00ccff', bloomIntensity: 1.5, textAnimStyle: 'Floating' });
           break;
+       case 'Chromaflux':
+          set({
+            currentScene: 'Chromaflux',
+            baseColor: '#f00018',
+            secondaryColor: '#3b0b96',
+            accentColor: '#fff03a',
+            bgColor: '#f2efec',
+            bloomIntensity: 0.82,
+            bloomThreshold: 0.5,
+            rgbSplitAmount: 0.004,
+            distortion: 0.14,
+            speed: 0.62,
+            chaos: 0.26,
+            textAnimStyle: 'Floating'
+          });
+          break;
        case 'Sonic Topology':
           set({ currentScene: 'Topology', baseColor: '#ffffff', secondaryColor: '#ff3366', bgColor: '#000000', bloomIntensity: 1.8, distortion: 0.18, speed: 1.0, chaos: 0.25, textAnimStyle: 'Cinematic' });
           break;

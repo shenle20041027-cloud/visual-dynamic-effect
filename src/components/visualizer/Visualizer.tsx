@@ -1584,6 +1584,153 @@ const liquidFragment = `
   }
 `;
 
+const chromafluxFragment = `
+  uniform float uTime;
+  uniform float uBass;
+  uniform float uLowMid;
+  uniform float uEnergy;
+  uniform vec3 uBaseColor;
+  uniform vec3 uSecondaryColor;
+  uniform vec3 uAccentColor;
+  uniform vec3 uBgColor;
+  varying vec2 vUv;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+  
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      v += noise(p) * a;
+      p = mat2(1.62, -1.18, 1.18, 1.62) * p + 17.3;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  float smin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+  }
+
+  float riverDistance(vec2 p, float t) {
+    float x = p.x;
+    float center = -0.04
+      + sin(x * 1.12 + t * 0.26) * 0.18
+      + sin(x * 2.35 - t * 0.18) * 0.09
+      + sin(x * 4.9 + t * 0.10) * 0.03;
+    float width = 0.25
+      + sin(x * 1.65 - t * 0.16) * 0.045
+      + sin(x * 4.1 + t * 0.12) * 0.028;
+    return abs(p.y - center) - width;
+  }
+
+  vec3 heatMap(float x) {
+    vec3 violet = vec3(0.20, 0.02, 0.58);
+    vec3 blue = vec3(0.03, 0.66, 0.92);
+    vec3 cyan = vec3(0.70, 1.00, 0.96);
+    vec3 yellow = vec3(1.00, 0.92, 0.02);
+    vec3 red = vec3(0.96, 0.05, 0.01);
+    vec3 softWhite = vec3(1.00, 0.96, 0.82);
+
+    vec3 c = mix(violet, blue, smoothstep(0.03, 0.22, x));
+    c = mix(c, cyan, smoothstep(0.18, 0.42, x));
+    c = mix(c, yellow, smoothstep(0.38, 0.62, x));
+    c = mix(c, red, smoothstep(0.58, 0.82, x));
+    c = mix(c, softWhite, smoothstep(0.88, 1.0, x) * 0.72);
+    return c;
+  }
+
+  void main() {
+    vec2 p = vUv * 2.0 - 1.0;
+    p.x *= 1.35;
+
+    float t = uTime * (0.42 + uEnergy * 0.08);
+    vec2 flow = vec2(
+      fbm(p * 1.5 + vec2(t * 0.18, -t * 0.07)),
+      fbm(p * 1.7 + vec2(-t * 0.11, t * 0.16))
+    ) - 0.5;
+    vec2 q = p + flow * (0.22 + uLowMid * 0.06);
+    q.y += sin(p.x * 1.15 + t * 0.2) * 0.04;
+
+    float d = riverDistance(q, t);
+    d = smin(d, riverDistance(q + vec2(-0.22, -0.28), t * 0.8) + 0.09, 0.24);
+
+    float river = smoothstep(0.22, -0.045, d);
+    float softBody = smoothstep(0.48, -0.02, d);
+    float edge = 1.0 - smoothstep(0.0, 0.055 + uEnergy * 0.012, abs(d));
+    float outerGlow = 1.0 - smoothstep(0.02, 0.26 + uBass * 0.06, abs(d));
+
+    float contour = sin((d * 23.0) - t * 1.15 + fbm(q * 3.4 - t * 0.2) * 3.1);
+    float band = clamp(0.5 + 0.5 * contour, 0.0, 1.0);
+    float heat = clamp(
+      0.18
+      + river * 0.48
+      + band * 0.34
+      + fbm(q * 2.8 + vec2(0.0, t * 0.28)) * 0.24
+      + uBass * 0.12,
+      0.0,
+      1.0
+    );
+
+    float island1 = smoothstep(0.30, 0.0, length(q - vec2(0.08, 0.38)) - (0.18 + uBass * 0.035));
+    float island2 = smoothstep(0.24, 0.0, length(q - vec2(0.42, -0.30)) - (0.13 + uLowMid * 0.04));
+    float island3 = smoothstep(0.20, 0.0, length(q - vec2(-0.10, -0.72)) - (0.12 + uEnergy * 0.025));
+    float hotSpots = max(max(island1, island2), island3) * river;
+    float channelCenter = -0.02 + sin(q.x * 1.05 + t * 0.18) * 0.08 + sin(q.x * 2.7 - t * 0.1) * 0.035;
+    float whiteChannel = smoothstep(0.30, 0.02, abs(q.y - channelCenter)) * river;
+    whiteChannel *= 0.72 + fbm(q * vec2(2.0, 5.8) + vec2(-t * 0.08, t * 0.04)) * 0.28;
+
+    vec3 paper = mix(vec3(0.955, 0.94, 0.935), uBgColor, 0.08);
+    float paperNoise = fbm(vUv * 58.0 + t * 0.04);
+    vec3 col = paper + (paperNoise - 0.5) * 0.028;
+
+    vec3 thermal = heatMap(heat + hotSpots * 0.28);
+    vec3 coolPool = vec3(0.62, 0.96, 0.98);
+    thermal = mix(coolPool, thermal, river * 0.78 + edge * 0.22);
+
+    vec3 violetHalo = vec3(0.24, 0.02, 0.58);
+    vec3 yellowHalo = vec3(1.0, 0.92, 0.03);
+    vec3 redCore = vec3(0.96, 0.04, 0.0);
+    vec3 whiteGlint = vec3(1.0, 0.94, 0.76);
+
+    col = mix(col, thermal, softBody * 0.86);
+    col = mix(col, vec3(0.955, 0.952, 0.92), whiteChannel * 0.9);
+    col = mix(col, violetHalo, outerGlow * (0.34 + band * 0.10));
+    col = mix(col, yellowHalo, edge * smoothstep(0.28, 0.62, band) * 0.72);
+    col = mix(col, redCore, hotSpots * 0.62);
+
+    float innerRidge = pow(max(0.0, sin((q.y + flow.x * 0.8) * 8.0 - t * 0.75)), 8.0) * river;
+    float glint = (innerRidge * 0.28 + edge * 0.18 + hotSpots * 0.18) * (0.72 + uEnergy * 0.22);
+    col += whiteGlint * glint;
+
+    vec3 ca = vec3(0.0);
+    ca.r = edge * smoothstep(0.42, 0.78, band) * 0.06;
+    ca.g = edge * 0.03;
+    ca.b = outerGlow * 0.08;
+    col += ca;
+
+    col = mix(paper, col, clamp(softBody + outerGlow * 0.58, 0.0, 1.0));
+    col = min(col, vec3(0.96, 0.94, 0.88));
+    col *= 0.99 + sin(vUv.y * 390.0 + t * 0.45) * 0.006;
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
 function LiquidScene() {
   const { speed, baseColor, secondaryColor, accentColor, bgColor } = useStore();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
@@ -1623,6 +1770,59 @@ function LiquidScene() {
         ref={materialRef}
         vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
         fragmentShader={liquidFragment}
+        uniforms={{
+          uTime: { value: 0 },
+          uBass: { value: 0 },
+          uLowMid: { value: 0 },
+          uEnergy: { value: 0 },
+          uBaseColor: { value: new THREE.Color(baseColor) },
+          uSecondaryColor: { value: new THREE.Color(secondaryColor) },
+          uAccentColor: { value: new THREE.Color(accentColor) },
+          uBgColor: { value: new THREE.Color(bgColor) },
+        }}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+function ChromaScene() {
+  const { speed, baseColor, secondaryColor, accentColor, bgColor } = useStore();
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const chromaTimeRef = useRef(0);
+  const chromaSpeedRef = useRef(0.12);
+  const chromaSurgeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    if(!materialRef.current) return;
+    const { volume, bass, lowMid, energy, beat, treble } = getReactiveAudio();
+    const spectralFlux = Math.max(treble, beat * 0.4);
+    const audioLift = volume * 0.18 + energy * 0.22 + bass * 0.28 + lowMid * 0.12;
+    const targetSurge = beat * 0.32 + spectralFlux * 0.14;
+    chromaSurgeRef.current += (targetSurge - chromaSurgeRef.current) * 0.035;
+
+    const targetSpeed = 0.07 + audioLift + chromaSurgeRef.current;
+    chromaSpeedRef.current += (targetSpeed - chromaSpeedRef.current) * 0.03;
+    chromaTimeRef.current += delta * chromaSpeedRef.current * Math.max(0.2, speed);
+
+    const uniforms = materialRef.current.uniforms;
+    uniforms.uTime.value = chromaTimeRef.current;
+    uniforms.uBass.value += (bass - uniforms.uBass.value) * 0.055;
+    uniforms.uLowMid.value += (lowMid - uniforms.uLowMid.value) * 0.05;
+    uniforms.uEnergy.value += (energy - uniforms.uEnergy.value) * 0.045;
+    uniforms.uBaseColor.value.set(baseColor);
+    uniforms.uSecondaryColor.value.set(secondaryColor);
+    uniforms.uAccentColor.value.set(accentColor);
+    uniforms.uBgColor.value.set(bgColor);
+  });
+
+  return (
+    <mesh position={[0,0,-2]} scale={[40, 20, 1]}>
+      <planeGeometry args={[1, 1]} />
+      <shaderMaterial
+        ref={materialRef}
+        vertexShader="varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }"
+        fragmentShader={chromafluxFragment}
         uniforms={{
           uTime: { value: 0 },
           uBass: { value: 0 },
@@ -2329,6 +2529,7 @@ function SceneRouter({ sceneOverride }: { sceneOverride?: string }) {
     case 'Cyber': return <CyberScene />;
     case 'Topology': return <TopologyScene />;
     case 'Liquid': return <LiquidScene />;
+    case 'Chromaflux': return <ChromaScene />;
     case 'Pulse': return <PulseScene />;
     case 'Void': return <VoidScene />;
     case 'Dumbar': return <RandomGlassBlocksScene />;

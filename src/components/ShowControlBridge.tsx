@@ -19,9 +19,14 @@ const scenePresetMap: Record<string, string> = {
   Dumbar: 'Dumbar Base',
 };
 
+const createIdFragment = () => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return uuid ? uuid.slice(0, 8) : Math.random().toString(36).slice(2, 10);
+};
+
 export function ShowControlBridge({ showStatus = true }: { showStatus?: boolean }) {
   const clientRef = useRef<ReturnType<typeof createShowControlClient> | null>(null);
-  const clientIdRef = useRef(`vj-visual-dynamic-effect-${crypto.randomUUID().slice(0, 8)}`);
+  const clientIdRef = useRef(`vj-visual-dynamic-effect-${createIdFragment()}`);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   const store = useStore();
 

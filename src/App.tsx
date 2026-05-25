@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { audioEngine } from '@/lib/AudioEngine';
 import { AudioPanel } from '@/components/layout/AudioPanel';
@@ -18,6 +18,7 @@ import { t } from '@/lib/i18n';
 import { useScreenSync } from '@/lib/screenSync';
 import { useApiAudioSource } from '@/lib/useApiAudioSource';
 import type { VisualInputSource } from '@/store/useStore';
+import type { AudioDebugSnapshot } from '@/lib/AudioEngine';
 
 export default function App() {
   const screenMatch = window.location.pathname.match(/^\/screen\/([^/]+)/);
@@ -56,6 +57,8 @@ function ControllerApp() {
     setMusicPanelOpen,
   } = useStore();
   const [initError, setInitError] = useState('');
+  const [audioDebug, setAudioDebug] = useState<AudioDebugSnapshot>(() => audioEngine.getDebugSnapshot());
+  const lastAudioDebugUpdateRef = useRef(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(Boolean(document.fullscreenElement));
@@ -84,6 +87,11 @@ function ControllerApp() {
         noiseGate: state.noiseGate,
         beatMultiplier: state.beatMultiplier
       });
+      const now = performance.now();
+      if (now - lastAudioDebugUpdateRef.current > 120) {
+        lastAudioDebugUpdateRef.current = now;
+        setAudioDebug(audioEngine.getDebugSnapshot());
+      }
 
       animationFrameId = requestAnimationFrame(renderLoop);
     };
@@ -152,24 +160,45 @@ function ControllerApp() {
       : 'Could not start the microphone. Check browser permissions and input device.';
   };
 
+  const getReadableMicErrorMessage = (err: unknown) => {
+    const name = err && typeof err === 'object' && 'name' in err ? String((err as any).name) : '';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return language === 'ZH' ? '麦克风权限被拒绝，请在浏览器地址栏允许麦克风后重试。' : 'Microphone permission was denied. Allow microphone access in the browser and try again.';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return language === 'ZH' ? '没有检测到可用麦克风。' : 'No available microphone was found.';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return language === 'ZH' ? '麦克风可能正被其他程序占用，请关闭占用后重试。' : 'The microphone is in use by another app. Close it and try again.';
+    }
+    if (err instanceof Error && err.message.includes('localhost or HTTPS')) {
+      return language === 'ZH' ? '麦克风权限需要 localhost 或 HTTPS 环境。请使用 http://localhost:4302 或 HTTPS 访问。' : 'Microphone access requires localhost or HTTPS. Use http://localhost:4302 or HTTPS.';
+    }
+    return language === 'ZH' ? '麦克风启动失败，请检查浏览器权限和输入设备。' : 'Could not start the microphone. Check browser permissions and input device.';
+  };
+
   const activateMic = async () => {
     setVisualInputSource('mic');
     setAudioReady(false);
     setInitError('');
+    setAudioDebug({ ...audioEngine.getDebugSnapshot(), status: 'requesting', message: 'Waiting for microphone permission.' });
     try {
       window.dispatchEvent(new Event('vj:stop-music'));
       await audioEngine.startMicrophone();
       setAudioReady(true);
       setInitError('');
+      setAudioDebug(audioEngine.getDebugSnapshot());
     } catch (err: any) {
       setAudioReady(false);
-      setInitError(getMicErrorMessage(err));
+      setInitError(getReadableMicErrorMessage(err));
+      setAudioDebug(audioEngine.getDebugSnapshot());
     }
   };
 
   const deactivateMic = () => {
     audioEngine.stopCurrentAudioSource();
     setAudioReady(false);
+    setAudioDebug(audioEngine.getDebugSnapshot());
     if (visualInputSource === 'mic') setVisualInputSource('api');
   };
 
@@ -181,6 +210,7 @@ function ControllerApp() {
     audioEngine.stopCurrentAudioSource();
     setAudioReady(false);
     setInitError('');
+    setAudioDebug(audioEngine.getDebugSnapshot());
     if (source !== 'music') window.dispatchEvent(new Event('vj:stop-music'));
     setVisualInputSource(source);
   };
@@ -196,6 +226,7 @@ function ControllerApp() {
       audioEngine.stopCurrentAudioSource();
       setAudioReady(false);
       setInitError('');
+      setAudioDebug(audioEngine.getDebugSnapshot());
     };
 
     window.addEventListener('vj:select-input', handleSelectInput);
@@ -217,6 +248,16 @@ function ControllerApp() {
       default: return <PresetPanel />;
     }
   };
+
+  const micStatusText = (() => {
+    if (visualInputSource !== 'mic') return language === 'ZH' ? '未连接' : 'Not connected';
+    if (audioDebug.status === 'requesting') return language === 'ZH' ? '等待授权' : 'Waiting for permission';
+    if (audioDebug.status === 'connected') return language === 'ZH' ? '麦克风已连接' : 'Microphone connected';
+    if (audioDebug.status === 'receiving') return language === 'ZH' ? '正在接收声音' : 'Receiving sound';
+    if (audioDebug.status === 'low') return language === 'ZH' ? '输入音量过低' : 'Input volume too low';
+    if (audioDebug.status === 'error') return language === 'ZH' ? '麦克风错误' : 'Microphone error';
+    return language === 'ZH' ? '未连接' : 'Not connected';
+  })();
 
   return (
     <div className="w-screen h-[100dvh] min-h-[100svh] bg-[#020202] text-white flex flex-col font-sans overflow-hidden">
@@ -265,8 +306,16 @@ function ControllerApp() {
                )}
              </div>
              <div className="hidden lg:flex items-center gap-2 text-[10px] font-bold text-white/50 uppercase tracking-widest">
-               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-               {i18n.LIVE_ENGINE_STATUS || 'Live Engine Status: Optimal'}
+               <div className={`w-1.5 h-1.5 rounded-full ${
+                 visualInputSource === 'mic' && audioDebug.status === 'receiving'
+                   ? 'bg-green-400 animate-pulse'
+                   : visualInputSource === 'mic' && (audioDebug.status === 'requesting' || audioDebug.status === 'connected')
+                     ? 'bg-yellow-300'
+                     : visualInputSource === 'mic' && (audioDebug.status === 'low' || audioDebug.status === 'error')
+                       ? 'bg-red-400'
+                       : 'bg-green-500 animate-pulse'
+               }`} />
+               {visualInputSource === 'mic' ? `MIC: ${micStatusText}` : (i18n.LIVE_ENGINE_STATUS || 'Live Engine Status: Optimal')}
              </div>
              <button 
                 onClick={() => setLanguage(language === 'EN' ? 'ZH' : 'EN')}
@@ -366,6 +415,22 @@ function ControllerApp() {
                  {initError && visualInputSource === 'mic' && (
                    <div className="absolute left-4 top-4 z-50 rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-xs font-bold text-red-100">
                      {initError}
+                   </div>
+                 )}
+                 {visualInputSource === 'mic' && !initError && (
+                   <div className="absolute left-4 top-4 z-50 min-w-[240px] rounded-lg border border-white/10 bg-black/65 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white/70 backdrop-blur-md">
+                     <div className="flex items-center justify-between gap-3">
+                       <span>{micStatusText}</span>
+                       <span className="text-white/40">ctx {audioDebug.contextState}</span>
+                     </div>
+                     <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono normal-case tracking-normal text-white/45">
+                       <span>raw {audioDebug.rawVolume.toFixed(3)}</span>
+                       <span>rms {audioDebug.rawRms.toFixed(3)}</span>
+                       <span>delta {audioDebug.frequencyDelta.toFixed(3)}</span>
+                       <span>bin {audioDebug.peakFrequencyBin}</span>
+                       <span>stream {audioDebug.streamActive ? 'live' : 'off'}</span>
+                       <span>freq {audioDebug.frequencyChanged ? 'moving' : 'flat'}</span>
+                     </div>
                    </div>
                  )}
                  

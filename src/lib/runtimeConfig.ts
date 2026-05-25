@@ -29,7 +29,3 @@ function resolveConfiguredUrl(configured: string | undefined, fallback: string) 
 export const APP_PORT = 4302;
 export const SHOW_BACKEND_URL = resolveConfiguredUrl(env.VITE_SHOW_BACKEND_URL, resolveHttpOrigin(4300));
 export const SHOW_WS_URL = resolveConfiguredUrl(env.VITE_SHOW_WS_URL, `${resolveWsOrigin(4300)}/ws`);
-export const BAOFA_SCREEN_BASE_URL = resolveConfiguredUrl(
-  env.VITE_BAOFA_SCREEN_BASE_URL,
-  `${resolveHttpOrigin(4303)}/screen`,
-);

@@ -1,4 +1,4 @@
-import { BAOFA_SCREEN_BASE_URL, SHOW_BACKEND_URL } from '@/lib/runtimeConfig';
+import { SHOW_BACKEND_URL } from '@/lib/runtimeConfig';
 
 export type ScreenOwner = 'vj' | 'baofa' | 'off' | 'diagnostic';
 
@@ -25,10 +25,6 @@ export const SHOW_SCREEN_IDS = [
   'E1', 'F1',
   'L1', 'L2', 'R1', 'R2',
 ] as const;
-
-export function getBaofaScreenUrl(screenId: string) {
-  return `${BAOFA_SCREEN_BASE_URL}/${encodeURIComponent(screenId)}`;
-}
 
 export async function fetchScreenState(signal?: AbortSignal): Promise<{
   routes: Record<string, ScreenRoute>;

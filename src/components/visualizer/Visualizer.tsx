@@ -278,7 +278,7 @@ function AudioMutationOverlay({ sceneOverride }: { sceneOverride?: string }) {
   });
   const { baseColor, secondaryColor, accentColor, bgColor, currentScene } = useStore();
   const scene = sceneOverride || currentScene;
-  const disabled = scene === 'Void';
+  const disabled = scene === 'Void' || scene === 'Topology';
 
   useFrame((state) => {
     if (disabled || !matRef.current) return;
@@ -1925,7 +1925,7 @@ const topologyFragment = `
 
     if (d < 0.005) {
       float dust = step(0.988, hash(floor(uv * vec2(180.0, 95.0)) + floor(uTime * 6.0)));
-      gl_FragColor = vec4(bg + dust * uColor1 * 0.08 * uAudio, 1.0);
+      gl_FragColor = vec4(bg + dust * uColor2 * 0.05 * uAudio, 1.0);
       return;
     }
 
@@ -1937,12 +1937,11 @@ const topologyFragment = `
     float edge = smoothstep(0.02, 0.25, d) * (1.0 - smoothstep(0.72, 1.0, d));
     lineAlpha *= mask;
 
-    vec3 contour = mix(uColor1, uColor2, clamp(uAudio * 1.4 + (1.0 - d), 0.0, 1.0));
+    vec3 contour = mix(uColor2 * 0.88, uColor2, clamp(uAudio * 1.4 + (1.0 - d), 0.0, 1.0));
     vec3 glow = uColor2 * mask * d * clamp(0.25 + uAudio, 0.25, 1.0) * 0.55;
-    vec3 whiteCore = vec3(1.0) * smoothstep(0.82, 1.0, d) * (0.12 + uAudio * 0.2);
-    vec3 finalColor = bg + contour * lineAlpha + glow + whiteCore;
+    vec3 finalColor = bg + contour * lineAlpha + glow;
 
-    finalColor += uColor1 * edge * 0.08 * (0.5 + uAudio);
+    finalColor += uColor2 * edge * 0.08 * (0.5 + uAudio);
     finalColor *= smoothstep(1.45, 0.25, length(center));
     finalColor *= 0.96 + sin(vUv.y * 900.0) * 0.04;
 

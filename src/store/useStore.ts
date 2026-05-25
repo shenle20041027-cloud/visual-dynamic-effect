@@ -252,7 +252,7 @@ export const useStore = create<VisualizerState>((set) => ({
   setVisualInputSource: (source) => set({
     visualInputSource: source,
     musicPanelOpen: source === 'music',
-    audioDriveMode: source === 'music' ? 'music' : 'mic',
+    audioDriveMode: source,
     autoVjEnabled: true,
     musicCameraEnabled: source !== 'mic',
   }),
@@ -328,7 +328,7 @@ export const useStore = create<VisualizerState>((set) => ({
   bassSense: 1.0,
   midSense: 1.0,
   trebleSense: 1.0,
-  noiseGate: 0.1,
+  noiseGate: 0.03,
   beatMultiplier: 1.0,
   setAudioParam: (key, value) => set({ [key]: value }),
 
@@ -432,8 +432,24 @@ export const useStore = create<VisualizerState>((set) => ({
        case 'Liquid Dream':
           set({ currentScene: 'Liquid', baseColor: '#b026ff', secondaryColor: '#00ccff', bloomIntensity: 1.5, textAnimStyle: 'Floating' });
           break;
+       case 'Chromaflux':
+          set({
+            currentScene: 'Chromaflux',
+            baseColor: '#f00018',
+            secondaryColor: '#3b0b96',
+            accentColor: '#fff03a',
+            bgColor: '#f2efec',
+            bloomIntensity: 0.82,
+            bloomThreshold: 0.5,
+            rgbSplitAmount: 0.004,
+            distortion: 0.14,
+            speed: 0.62,
+            chaos: 0.26,
+            textAnimStyle: 'Floating'
+          });
+          break;
        case 'Sonic Topology':
-          set({ currentScene: 'Topology', baseColor: '#ffffff', secondaryColor: '#ff3366', bgColor: '#000000', bloomIntensity: 1.8, distortion: 0.18, speed: 1.0, chaos: 0.25, textAnimStyle: 'Cinematic' });
+          set({ currentScene: 'Topology', baseColor: '#ff4f70', secondaryColor: '#ff3366', accentColor: '#ff7f96', bgColor: '#000000', bloomIntensity: 1.8, distortion: 0.18, speed: 1.0, chaos: 0.25, textAnimStyle: 'Cinematic' });
           break;
        case 'Neon Pulse':
           set({
@@ -457,7 +473,25 @@ export const useStore = create<VisualizerState>((set) => ({
           });
           break;
        case 'Dark Space':
-          set({ currentScene: 'Void', baseColor: '#ffffff', secondaryColor: '#444444', bloomIntensity: 1, textAnimStyle: 'Massive' });
+          set({
+            currentScene: 'Void',
+            baseColor: '#ff1600',
+            secondaryColor: '#28e6ff',
+            accentColor: '#ffffff',
+            bgColor: '#000000',
+            bloomIntensity: 1.35,
+            rgbSplitAmount: 0.0,
+            distortion: 0.08,
+            glitchActive: true,
+            speed: 1.12,
+            chaos: 0.62,
+            textInput: 'play',
+            textColor: '#ffffff',
+            textFontSize: 5.4,
+            textFontWeight: 900,
+            textLetterSpacing: -0.08,
+            textAnimStyle: 'Glitch'
+          });
           break;
        case 'Dumbar Base':
           set({ currentScene: 'Dumbar', baseColor: '#d8d8d8', secondaryColor: '#5f5f5f', bgColor: '#050505', bloomIntensity: 1.15, rgbSplitAmount: 0.0, distortion: 0.03, glitchActive: false, speed: 1.0, chaos: 0.42, contrast: 1.24, saturation: 1.08, brightness: 0.96, musicCameraEnabled: true, audioFxReactive: true });

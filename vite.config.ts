@@ -21,7 +21,7 @@ export default defineConfig(({mode}) => {
       hmr: false,
       proxy: {
         '/api': {
-          target: 'http://localhost:4300',
+          target: env.VITE_LAN_HOST || env.SHOW_LAN_HOST ? `http://${env.VITE_LAN_HOST || env.SHOW_LAN_HOST}:4300` : 'http://localhost:4300',
           changeOrigin: true,
         },
       },

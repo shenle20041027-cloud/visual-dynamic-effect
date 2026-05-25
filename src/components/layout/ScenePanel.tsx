@@ -5,6 +5,7 @@ import { t } from '@/lib/i18n';
 const scenesConfig = [
   { id: 'Void' },
   { id: 'Liquid' },
+  { id: 'Chromaflux' },
   { id: 'Cyber' },
   { id: 'Topology' },
   { id: 'Pulse' },

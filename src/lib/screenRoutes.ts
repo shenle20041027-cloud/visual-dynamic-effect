@@ -1,3 +1,5 @@
+import { SHOW_BACKEND_URL } from '@/lib/runtimeConfig';
+
 export type ScreenOwner = 'vj' | 'baofa' | 'off' | 'diagnostic';
 
 export type ScreenRoute = {
@@ -16,7 +18,6 @@ export type ScreenPresentation = {
 };
 
 const env = (import.meta as any).env || {};
-export const SHOW_BACKEND_URL = String(env.VITE_SHOW_BACKEND_URL || 'http://localhost:4300').replace(/\/$/, '');
 const controlToken = String(env.VITE_CONTROL_TOKEN || '');
 export const BAOFA_SCREEN_BASE_URL = 'http://localhost:4303/screen';
 
@@ -28,10 +29,6 @@ export const SHOW_SCREEN_IDS = [
   'E1', 'F1',
   'L1', 'L2', 'R1', 'R2',
 ] as const;
-
-export function getBaofaScreenUrl(screenId: string) {
-  return `${BAOFA_SCREEN_BASE_URL}/${encodeURIComponent(screenId)}`;
-}
 
 export async function fetchScreenState(signal?: AbortSignal): Promise<{
   routes: Record<string, ScreenRoute>;

@@ -12,15 +12,21 @@ const toNumber = (value: unknown, fallback: number) =>
 const scenePresetMap: Record<string, string> = {
   Cyber: 'Cyberpunk',
   Liquid: 'Liquid Dream',
+  Chromaflux: 'Chromaflux',
   Topology: 'Sonic Topology',
   Pulse: 'Neon Pulse',
   Void: 'Dark Space',
   Dumbar: 'Dumbar Base',
 };
 
+const createIdFragment = () => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return uuid ? uuid.slice(0, 8) : Math.random().toString(36).slice(2, 10);
+};
+
 export function ShowControlBridge({ showStatus = true }: { showStatus?: boolean }) {
   const clientRef = useRef<ReturnType<typeof createShowControlClient> | null>(null);
-  const clientIdRef = useRef(`vj-visual-dynamic-effect-${crypto.randomUUID().slice(0, 8)}`);
+  const clientIdRef = useRef(`vj-visual-dynamic-effect-${createIdFragment()}`);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   const store = useStore();
 
@@ -114,7 +120,7 @@ export function ShowControlBridge({ showStatus = true }: { showStatus?: boolean 
   if (!showStatus) return null;
 
   return (
-    <div className="pointer-events-none fixed left-3 bottom-3 z-[100] rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/60 backdrop-blur">
+    <div className="pointer-events-none fixed left-3 bottom-3 z-30 hidden rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/60 backdrop-blur md:block">
       Show API: {status}
     </div>
   );

@@ -2,7 +2,7 @@ import { ExternalLink, MonitorOff, Route, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useScreenSync } from '@/lib/screenSync';
 import { screenText } from '@/lib/screenText';
-import { fetchScreenState, getBaofaScreenUrl, type ScreenPresentation, type ScreenRoute } from '@/lib/screenRoutes';
+import { fetchScreenState, type ScreenPresentation, type ScreenRoute } from '@/lib/screenRoutes';
 import { useStore } from '@/store/useStore';
 import { Visualizer } from '@/components/visualizer/Visualizer';
 
@@ -46,10 +46,10 @@ export function ScreenOutput({ screenId }: { screenId: string }) {
 
   useEffect(() => {
     if (!route || route.owner === 'vj' || !presentation.autoRedirect) return;
-    if (route.owner === 'baofa') {
-      window.location.replace(route.url || getBaofaScreenUrl(screenId));
+    if (route.owner === 'baofa' && route.url) {
+      window.location.replace(route.url);
     }
-  }, [presentation.autoRedirect, route, screenId]);
+  }, [presentation.autoRedirect, route]);
 
   if (!screen) {
     return (
@@ -66,7 +66,7 @@ export function ScreenOutput({ screenId }: { screenId: string }) {
   }
 
   if (route && route.owner !== 'vj') {
-    const targetUrl = route.owner === 'baofa' ? route.url || getBaofaScreenUrl(screenId) : null;
+    const targetUrl = route.owner === 'baofa' ? route.url : null;
 
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-black text-white">
@@ -87,6 +87,9 @@ export function ScreenOutput({ screenId }: { screenId: string }) {
           )}
           {presentation.autoRedirect && targetUrl && (
             <div className="text-[10px] font-bold uppercase tracking-widest text-white/35">Redirecting automatically</div>
+          )}
+          {presentation.autoRedirect && route.owner === 'baofa' && !targetUrl && (
+            <div className="text-[10px] font-bold uppercase tracking-widest text-amber-200/55">Route URL unavailable</div>
           )}
         </div>
       </div>

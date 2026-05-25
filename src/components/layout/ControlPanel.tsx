@@ -3,6 +3,8 @@ import { useStore } from '@/store/useStore';
 import { BrainCircuit, Move, Orbit, Power, Save, Wand2 } from 'lucide-react';
 import { t } from '@/lib/i18n';
 import { getAudioDriveSnapshot } from '@/lib/audioDrive';
+import { audioEngine } from '@/lib/AudioEngine';
+import type { AudioDebugSnapshot } from '@/lib/AudioEngine';
 
 const Toggle = ({ label, active, onToggle }: any) => (
   <div className="flex justify-between items-center gap-4">
@@ -40,7 +42,6 @@ export function ControlPanel() {
     musicPanelOpen,
     visualMemories,
     setAutoVjControl,
-    setVisualInputSource,
     setMusicPanelOpen,
     saveVisualMemory,
     applyVisualMemory,
@@ -52,6 +53,7 @@ export function ControlPanel() {
   const [padPos, setPadPos] = useState({ x: 0.5, y: 0.5 }); // Initialize to center
   const [isDragging, setIsDragging] = useState(false);
   const [micLevels, setMicLevels] = useState({ volume: 0, bass: 0, beat: 0 });
+  const [audioDebug, setAudioDebug] = useState<AudioDebugSnapshot>(() => audioEngine.getDebugSnapshot());
 
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -100,6 +102,7 @@ export function ControlPanel() {
           bass: Math.min(1, Math.max(bass, subBass, mid, highMid, treble) * 2.2),
           beat: Math.min(1, beat),
         });
+        setAudioDebug(audioEngine.getDebugSnapshot());
       }
       animationFrameId = requestAnimationFrame(updateMicLevels);
     };
@@ -107,6 +110,20 @@ export function ControlPanel() {
     updateMicLevels();
     return () => cancelAnimationFrame(animationFrameId);
   }, [audioDriveMode]);
+
+  const selectVisualInput = (source: 'mic' | 'music' | 'api') => {
+    window.dispatchEvent(new CustomEvent('vj:select-input', { detail: source }));
+  };
+
+  const micStatusLabel = (() => {
+    if (visualInputSource !== 'mic') return '未连接 / Not connected';
+    if (audioDebug.status === 'requesting') return '等待授权 / Waiting permission';
+    if (audioDebug.status === 'connected') return '麦克风已连接 / Connected';
+    if (audioDebug.status === 'receiving') return '正在接收声音 / Receiving';
+    if (audioDebug.status === 'low') return '输入音量过低 / Low input';
+    if (audioDebug.status === 'error') return '错误 / Error';
+    return '未连接 / Not connected';
+  })();
 
   return (
     <div className="w-full p-6 flex flex-col gap-4">
@@ -184,8 +201,8 @@ export function ControlPanel() {
             ].map((option) => (
               <button
                 key={option.source}
-                onClick={() => setVisualInputSource(option.source)}
-                className={`h-9 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                onClick={() => selectVisualInput(option.source)}
+                className={`h-11 md:h-9 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors ${
                   visualInputSource === option.source
                     ? 'border-orange-300 bg-orange-300 text-black'
                     : 'border-white/10 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white'
@@ -199,7 +216,7 @@ export function ControlPanel() {
             <button
               type="button"
               onClick={() => setMusicPanelOpen(!musicPanelOpen)}
-              className="h-8 rounded-lg border border-emerald-300/30 bg-emerald-300/10 text-[10px] font-bold uppercase tracking-widest text-emerald-100 hover:bg-emerald-300 hover:text-black"
+              className="h-11 md:h-8 rounded-lg border border-emerald-300/30 bg-emerald-300/10 text-[10px] font-bold uppercase tracking-widest text-emerald-100 hover:bg-emerald-300 hover:text-black"
             >
               {musicPanelOpen ? 'Hide Music Panel' : 'Show Music Panel'}
             </button>
@@ -217,6 +234,22 @@ export function ControlPanel() {
             <MicMeter label={i18n.DRIVE_LEVEL || 'Drive Level'} value={micLevels.volume} />
             <MicMeter label={i18n.DRIVE_BAND_ENERGY || 'Band Energy'} value={micLevels.bass} />
             <MicMeter label={i18n.DRIVE_PULSE || 'Pulse'} value={micLevels.beat} active={micLevels.beat > 0.1} />
+          </div>
+          <div className="mt-4 rounded-md border border-white/10 bg-black/35 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-widest">
+              <span className="text-white/55">Mic Debug</span>
+              <span className={audioDebug.status === 'receiving' ? 'text-emerald-300' : audioDebug.status === 'error' ? 'text-red-300' : 'text-yellow-200'}>
+                {micStatusLabel}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px] text-white/45">
+              <span>raw {audioDebug.rawVolume.toFixed(3)}</span>
+              <span>rms {audioDebug.rawRms.toFixed(3)}</span>
+              <span>delta {audioDebug.frequencyDelta.toFixed(3)}</span>
+              <span>bin {audioDebug.peakFrequencyBin}</span>
+              <span>ctx {audioDebug.contextState}</span>
+              <span>stream {audioDebug.streamActive ? 'live' : 'off'}</span>
+            </div>
           </div>
         </div>
       </div>

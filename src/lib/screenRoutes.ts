@@ -1,3 +1,5 @@
+import { BAOFA_SCREEN_BASE_URL, SHOW_BACKEND_URL } from '@/lib/runtimeConfig';
+
 export type ScreenOwner = 'vj' | 'baofa' | 'off' | 'diagnostic';
 
 export type ScreenRoute = {
@@ -14,10 +16,6 @@ export type ScreenPresentation = {
   showDebug: boolean;
   showMenu: boolean;
 };
-
-const env = (import.meta as any).env || {};
-export const SHOW_BACKEND_URL = String(env.VITE_SHOW_BACKEND_URL || 'http://localhost:4300').replace(/\/$/, '');
-export const BAOFA_SCREEN_BASE_URL = 'http://localhost:4303/screen';
 
 export const SHOW_SCREEN_IDS = [
   'A1',

@@ -7,7 +7,12 @@ import { WebSocketServer } from 'ws';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const port = 4302;
-const backendOrigin = 'http://localhost:4300';
+const configuredBackendOrigin = String(process.env.VITE_SHOW_BACKEND_URL || process.env.SHOW_BACKEND_URL || '').replace(/\/$/, '');
+const lanHost = String(process.env.VITE_LAN_HOST || process.env.SHOW_LAN_HOST || '').trim();
+
+function isLocalAddress(value) {
+  return /(^|\/\/)localhost(?::|\/|$)|(^|\/\/)127\.0\.0\.1(?::|\/|$)|(^|\/\/)0\.0\.0\.0(?::|\/|$)/i.test(String(value || ''));
+}
 const host = process.env.HOST || '0.0.0.0';
 const isLiveMode = process.env.NODE_ENV === 'production' || process.env.VJ_LIVE_MODE === '1';
 const app = express();
@@ -105,7 +110,21 @@ app.get('/api/network', (_request, response) => {
   });
 });
 
-// Proxy for /api requests to real backend (localhost:4300).
+function getRequestHostName(request) {
+  try {
+    return new URL(`http://${request.headers.host || 'localhost'}`).hostname;
+  } catch {
+    return 'localhost';
+  }
+}
+
+function resolveBackendOrigin(request) {
+  if (configuredBackendOrigin && !isLocalAddress(configuredBackendOrigin)) return configuredBackendOrigin;
+  if (lanHost) return `http://${lanHost}:4300`;
+  return `http://${getRequestHostName(request)}:4300`;
+}
+
+// Proxy for /api requests to the backend.
 // This must come AFTER local /api routes and BEFORE the app shell.
 app.use('/api', async (req, res, next) => {
   const url = req.originalUrl || req.url;
@@ -115,16 +134,16 @@ app.use('/api', async (req, res, next) => {
     return next();
   }
 
-  console.log(`[Proxy] Forwarding: ${req.method} ${url} -> ${backendOrigin}${url}`);
+  const targetOrigin = resolveBackendOrigin(req);
+  console.log(`[Proxy] Forwarding: ${req.method} ${url} -> ${targetOrigin}${url}`);
   
   try {
-    // Use localhost instead of 127.0.0.1 to be more consistent with user's report
-    const targetUrl = `${backendOrigin}${url}`;
+    const targetUrl = `${targetOrigin}${url}`;
     const response = await fetch(targetUrl, {
       method: req.method,
       headers: {
         ...req.headers,
-        host: 'localhost:4300',
+        host: new URL(targetOrigin).host,
         'connection': 'keep-alive'
       },
       body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
@@ -145,7 +164,7 @@ app.use('/api', async (req, res, next) => {
     console.error(`[Proxy] Connection Error: ${error.message}`);
     res.status(502).json({
       error: 'Bad Gateway',
-      message: 'Backend API at localhost:4300 is not reachable. Please ensure vad.26.api is running.',
+      message: `Backend API at ${targetOrigin} is not reachable. Please ensure vad.26.api is running.`,
       details: error.message
     });
   }
@@ -165,7 +184,6 @@ if (isLiveMode) {
       middlewareMode: true,
       hmr: {
         server,
-        host: 'localhost',
         clientPort: port,
         path: '/__vite_hmr',
       },

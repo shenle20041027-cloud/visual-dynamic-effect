@@ -1,3 +1,19 @@
+export type MicrophoneStatus = 'disconnected' | 'requesting' | 'connected' | 'receiving' | 'low' | 'error';
+
+export interface AudioDebugSnapshot {
+  status: MicrophoneStatus;
+  message: string;
+  contextState: string;
+  streamActive: boolean;
+  rawRms: number;
+  rawVolume: number;
+  frequencyDelta: number;
+  frequencyChanged: boolean;
+  peakFrequencyBin: number;
+  sampleRate: number;
+  sourceType: 'none' | 'mic' | 'music' | 'api';
+}
+
 export class AudioEngine {
   private static instance: AudioEngine;
   
@@ -32,6 +48,20 @@ export class AudioEngine {
     dynamicRange: 0,
   };
 
+  public debug: AudioDebugSnapshot = {
+    status: 'disconnected',
+    message: 'Microphone is not connected.',
+    contextState: 'none',
+    streamActive: false,
+    rawRms: 0,
+    rawVolume: 0,
+    frequencyDelta: 0,
+    frequencyChanged: false,
+    peakFrequencyBin: 0,
+    sampleRate: 0,
+    sourceType: 'none',
+  };
+
   private beatThreshold = 1.3;
   private energyHistory: number[] = new Array(64).fill(0);
   private energyIndex = 0;
@@ -44,6 +74,7 @@ export class AudioEngine {
     highMid: 0,
     treble: 0,
   };
+  private previousFrequencyFrame: Uint8Array | null = null;
 
   private constructor() {}
 
@@ -84,11 +115,32 @@ export class AudioEngine {
       highMid: 0,
       treble: 0,
     };
+    this.previousFrequencyFrame = null;
+    this.debug.rawRms = 0;
+    this.debug.rawVolume = 0;
+    this.debug.frequencyDelta = 0;
+    this.debug.frequencyChanged = false;
+    this.debug.peakFrequencyBin = 0;
+  }
+
+  private setDebug(next: Partial<AudioDebugSnapshot>) {
+    this.debug = {
+      ...this.debug,
+      contextState: this.context?.state ?? 'none',
+      streamActive: Boolean(this.stream?.getAudioTracks().some((track) => track.readyState === 'live')),
+      sampleRate: this.context?.sampleRate ?? 0,
+      sourceType: this.activeSourceType,
+      ...next,
+    };
   }
 
   private async ensureContext(): Promise<AudioContext> {
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextCtor) {
+      throw new Error('This browser does not support Web Audio API.');
+    }
     if (!this.context || this.context.state === 'closed') {
-      this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.context = new AudioContextCtor();
     }
     if (this.context.state === 'suspended') {
       await this.context.resume();
@@ -146,6 +198,7 @@ export class AudioEngine {
     this.activeSourceType = 'none';
     this.isSimulating = false;
     this.resetCurrent();
+    this.setDebug({ status: 'disconnected', message: 'Microphone is not connected.' });
   }
 
   public async initialize(): Promise<void> {
@@ -156,11 +209,24 @@ export class AudioEngine {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       throw new Error('This browser does not support microphone capture.');
     }
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!window.isSecureContext && !isLocalhost) {
+      throw new Error('Microphone capture requires localhost or HTTPS.');
+    }
 
     try {
+      this.setDebug({ status: 'requesting', message: 'Waiting for microphone permission.' });
       const context = await this.ensureContext();
       this.stopCurrentAudioSource();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      this.setDebug({ status: 'requesting', message: 'Browser permission prompt is open.' });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+        video: false,
+      });
       this.createAnalyser(context);
 
       this.highPass = context.createBiquadFilter();
@@ -190,9 +256,11 @@ export class AudioEngine {
       this.activeSourceType = 'mic';
       this.isSimulating = false;
       this.resetCurrent();
+      this.setDebug({ status: 'connected', message: 'Microphone is connected. Listening for input.' });
     } catch (err) {
       this.stopCurrentAudioSource();
       this.isSimulating = false;
+      this.setDebug({ status: 'error', message: err instanceof Error ? err.message : 'Could not start microphone.' });
       throw err;
     }
   }
@@ -211,6 +279,7 @@ export class AudioEngine {
     this.activeSourceType = 'music';
     this.isSimulating = false;
     this.resetCurrent();
+    this.setDebug({ status: 'disconnected', message: 'Microphone is not connected.' });
     return { context, input: this.musicInput, output: this.musicOutput };
   }
 
@@ -316,10 +385,19 @@ export class AudioEngine {
     let vSum = 0, subSum = 0, bSum = 0, lmSum = 0, mSum = 0, hmSum = 0, tSum = 0;
     let weightedFrequencySum = 0;
     let audibleSum = 0;
-    const nyquist = (this.context?.sampleRate ?? 44100) / 2;
+    let peakFrequencyBin = 0;
+    let peakFrequencyValue = 0;
+    let frequencyDeltaSum = 0;
 
     for (let i = 0; i < length; i++) {
       let val = data[i];
+      if (val > peakFrequencyValue) {
+        peakFrequencyValue = val;
+        peakFrequencyBin = i;
+      }
+      if (this.previousFrequencyFrame) {
+        frequencyDeltaSum += Math.abs(data[i] - this.previousFrequencyFrame[i]);
+      }
       if (val < noiseGate) val = 0;
       vSum += val;
       const normalizedFrequency = i / Math.max(1, length - 1);
@@ -333,6 +411,8 @@ export class AudioEngine {
       else if (i >= 93 && i < 280) hmSum += val;
       else if (i >= 280) tSum += val;
     }
+    this.previousFrequencyFrame = new Uint8Array(data);
+    const frequencyDelta = frequencyDeltaSum / length / 255;
 
     const subSense = config?.subBassSense ?? 1.0;
     const bassSense = config?.bassSense ?? 1.0;
@@ -350,6 +430,7 @@ export class AudioEngine {
 
     const freqVolume = (vSum / length / 255) * gain;
     const rawVolume = Math.max(freqVolume * 2.6, gatedRms * 5.5) * gain;
+    const ungatedRawVolume = Math.max(freqVolume * 2.6, rms * 5.5) * gain;
     this.adaptivePeak = Math.max(rawVolume, this.adaptivePeak * 0.996, 0.16);
     const volume = Math.min(1, Math.pow(rawVolume / (this.adaptivePeak + 0.001), 0.95));
 
@@ -423,6 +504,23 @@ export class AudioEngine {
     } else {
         this.current.beat *= 0.62;
     }
+
+    if (this.activeSourceType === 'mic') {
+      const receiving = ungatedRawVolume > 0.04 || frequencyDelta > 0.006;
+      this.setDebug({
+        status: receiving ? 'receiving' : 'low',
+        message: receiving ? 'Receiving microphone signal.' : 'Input volume is too low.',
+        rawRms: rms,
+        rawVolume: ungatedRawVolume,
+        frequencyDelta,
+        frequencyChanged: frequencyDelta > 0.006,
+        peakFrequencyBin,
+      });
+    }
+  }
+
+  public getDebugSnapshot(): AudioDebugSnapshot {
+    return { ...this.debug };
   }
 
   public destroy() {

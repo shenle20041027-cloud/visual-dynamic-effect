@@ -328,7 +328,7 @@ export const useStore = create<VisualizerState>((set) => ({
   bassSense: 1.0,
   midSense: 1.0,
   trebleSense: 1.0,
-  noiseGate: 0.1,
+  noiseGate: 0.03,
   beatMultiplier: 1.0,
   setAudioParam: (key, value) => set({ [key]: value }),
 
@@ -449,7 +449,7 @@ export const useStore = create<VisualizerState>((set) => ({
           });
           break;
        case 'Sonic Topology':
-          set({ currentScene: 'Topology', baseColor: '#ffffff', secondaryColor: '#ff3366', bgColor: '#000000', bloomIntensity: 1.8, distortion: 0.18, speed: 1.0, chaos: 0.25, textAnimStyle: 'Cinematic' });
+          set({ currentScene: 'Topology', baseColor: '#ff4f70', secondaryColor: '#ff3366', accentColor: '#ff7f96', bgColor: '#000000', bloomIntensity: 1.8, distortion: 0.18, speed: 1.0, chaos: 0.25, textAnimStyle: 'Cinematic' });
           break;
        case 'Neon Pulse':
           set({

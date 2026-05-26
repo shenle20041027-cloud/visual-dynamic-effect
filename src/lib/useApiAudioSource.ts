@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { SHOW_BACKEND_URL, SHOW_WS_URL } from '@/lib/runtimeConfig';
 import { setRemoteAudioEnabled, setRemoteAudioSnapshot, type AudioDriveSnapshot } from '@/lib/audioDrive';
 
 const API_ENDPOINT = '/api/audio-summary';
@@ -6,8 +7,8 @@ const FALLBACK_POLL_INTERVAL_MS = 500;
 const FALLBACK_STALE_MS = 250;
 
 const env = (import.meta as any).env || {};
-const backendUrl = (env.VITE_SHOW_BACKEND_URL || 'http://localhost:4300').replace(/\/$/, '');
-const wsUrl = (env.VITE_SHOW_WS_URL || `${backendUrl.replace(/^http/, 'ws')}/ws`).replace(/\/$/, '');
+const backendUrl = SHOW_BACKEND_URL;
+const wsUrl = SHOW_WS_URL;
 
 export function useApiAudioSource(enabled: boolean) {
   const intervalRef = useRef<number | null>(null);

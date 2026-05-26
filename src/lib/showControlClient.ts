@@ -1,3 +1,5 @@
+import { SHOW_BACKEND_URL, SHOW_WS_URL } from '@/lib/runtimeConfig';
+
 export type ModuleName = 'audio' | 'visual' | 'interaction';
 
 export type ControlCommand = {
@@ -31,8 +33,8 @@ type ClientOptions = {
 };
 
 const env = (import.meta as any).env || {};
-const backendUrl = (env.VITE_SHOW_BACKEND_URL || 'http://localhost:4300').replace(/\/$/, '');
-const wsUrl = env.VITE_SHOW_WS_URL || backendUrl.replace(/^http/, 'ws') + '/ws';
+const backendUrl = SHOW_BACKEND_URL;
+const wsUrl = SHOW_WS_URL;
 const controlToken = env.VITE_CONTROL_TOKEN || '';
 const databaseUrl = String(env.VITE_FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
 const showId = env.VITE_SHOW_ID || 'show-main';

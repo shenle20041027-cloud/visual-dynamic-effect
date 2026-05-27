@@ -6,6 +6,7 @@ const scenesConfig = [
   { id: 'Void' },
   { id: 'Liquid' },
   { id: 'Chromaflux' },
+  { id: 'Blue Font' },
   { id: 'Cyber' },
   { id: 'Topology' },
   { id: 'Pulse' },

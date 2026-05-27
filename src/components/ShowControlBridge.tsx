@@ -13,6 +13,7 @@ const scenePresetMap: Record<string, string> = {
   Cyber: 'Cyberpunk',
   Liquid: 'Liquid Dream',
   Chromaflux: 'Chromaflux',
+  'Blue Font': 'Blue Font',
   Topology: 'Sonic Topology',
   Pulse: 'Neon Pulse',
   Void: 'Dark Space',

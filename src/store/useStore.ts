@@ -493,6 +493,27 @@ export const useStore = create<VisualizerState>((set) => ({
             textAnimStyle: 'Glitch'
           });
           break;
+       case 'Blue Font':
+          set({
+            currentScene: 'Blue Font',
+            baseColor: '#00c3ff',
+            secondaryColor: '#8b5cff',
+            accentColor: '#ffffff',
+            bgColor: '#000713',
+            bloomIntensity: 1.8,
+            rgbSplitAmount: 0.007,
+            distortion: 0.32,
+            glitchActive: true,
+            speed: 1.18,
+            chaos: 0.54,
+            textInput: 'BLUE\nFONT',
+            textColor: '#dff8ff',
+            textFontSize: 5.2,
+            textFontWeight: 900,
+            textLetterSpacing: -0.02,
+            textAnimStyle: 'Glitch'
+          });
+          break;
        case 'Dumbar Base':
           set({ currentScene: 'Dumbar', baseColor: '#d8d8d8', secondaryColor: '#5f5f5f', bgColor: '#050505', bloomIntensity: 1.15, rgbSplitAmount: 0.0, distortion: 0.03, glitchActive: false, speed: 1.0, chaos: 0.42, contrast: 1.24, saturation: 1.08, brightness: 0.96, musicCameraEnabled: true, audioFxReactive: true });
           break;

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { getAudioDriveSnapshot } from '@/lib/audioDrive';
 import { getOutputModeLabel, getTransitionLabel, screenText } from '@/lib/screenText';
 import { useStore } from '@/store/useStore';
+import { BlueFontScene } from './BlueFontScene';
 
 function getReactiveAudio() {
   const { audioDriveMode, autoVjEnabled } = useStore.getState();
@@ -2525,6 +2526,7 @@ function SceneRouter({ sceneOverride }: { sceneOverride?: string }) {
   const { currentScene } = useStore();
   const scene = sceneOverride || currentScene;
   switch(scene) {
+    case 'Blue Font': return null;
     case 'Cyber': return <CyberScene />;
     case 'Topology': return <TopologyScene />;
     case 'Liquid': return <LiquidScene />;
@@ -3512,26 +3514,30 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
       className="absolute inset-0 h-full min-h-0 w-full overflow-hidden"
       style={{ filter: `contrast(${contrast}) brightness(${brightness}) saturate(${saturation})` }}
     >
-      <Canvas
-        key={viewportKey}
-        className="screen-canvas !absolute !inset-0 !h-full !w-full"
-        style={{ width: '100%', height: '100%' }}
-        camera={{ position: [0, 0, 5], fov: 60 }}
-        dpr={isScreenOutput ? [0.75, 1] : [1, 2]}
-        gl={{ antialias: !isScreenOutput, alpha: false, powerPreference: 'high-performance' }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 0.82;
-        }}
-      >
-        <color attach="background" args={[bgColor]} />
-        <AudioMorphTone />
-        <MusicCameraRig />
-        <SceneRouter sceneOverride={sceneOverride} />
-        <AudioMutationOverlay sceneOverride={sceneOverride} />
-        {sceneOverride !== 'Void' && <VisualText sceneOverride={sceneOverride} />}
-        <PostProcessing reduced={isScreenOutput} />
-      </Canvas>
+      {sceneOverride === 'Blue Font' ? (
+        <BlueFontScene />
+      ) : (
+        <Canvas
+          key={viewportKey}
+          className="screen-canvas !absolute !inset-0 !h-full !w-full"
+          style={{ width: '100%', height: '100%' }}
+          camera={{ position: [0, 0, 5], fov: 60 }}
+          dpr={isScreenOutput ? [0.75, 1] : [1, 2]}
+          gl={{ antialias: !isScreenOutput, alpha: false, powerPreference: 'high-performance' }}
+          onCreated={({ gl }) => {
+            gl.toneMapping = THREE.ACESFilmicToneMapping;
+            gl.toneMappingExposure = 0.82;
+          }}
+        >
+          <color attach="background" args={[bgColor]} />
+          <AudioMorphTone />
+          <MusicCameraRig />
+          <SceneRouter sceneOverride={sceneOverride} />
+          <AudioMutationOverlay sceneOverride={sceneOverride} />
+          {sceneOverride !== 'Void' && <VisualText sceneOverride={sceneOverride} />}
+          <PostProcessing reduced={isScreenOutput} />
+        </Canvas>
+      )}
       <DarkSpaceTextOverlay sceneOverride={sceneOverride} />
       <PulseEnergyOverlay sceneOverride={sceneOverride} />
       {isScreenOutput && !activeScreen?.enabled && (

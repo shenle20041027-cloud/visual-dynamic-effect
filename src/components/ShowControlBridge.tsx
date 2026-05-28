@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { createShowControlClient, type ControlCommand } from '@/lib/showControlClient';
 import type { AudioDriveMode } from '@/lib/audioDrive';
+import type { VisualInputSource } from '@/store/useStore';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -133,8 +134,6 @@ function applyVisualCommand(command: ControlCommand) {
   const state = useStore.getState();
   const value = command.value;
 
-  state.setVisualInputSource('api');
-
   if (command.command === 'setScene' && typeof value === 'string') {
     applyRemoteScene(value);
   } else if (command.command === 'setPreset' && typeof value === 'string') {
@@ -160,13 +159,22 @@ function applyVisualCommand(command: ControlCommand) {
     if (typeof value.speed === 'number') state.setPerformanceControl('speed', value.speed);
     if (typeof value.chaos === 'number') state.setPerformanceControl('chaos', value.chaos);
   } else if (command.command === 'setAudioDrive' && typeof value === 'string') {
-    state.setAudioDriveMode(value as AudioDriveMode);
+    applyRemoteAudioDrive(value);
   } else if (command.command === 'setFullscreen') {
     state.setIsFullscreen(Boolean(value));
   } else if (command.command === 'setIntensity') {
     const amount = toNumber(value, state.chaos);
     state.setPerformanceControl('chaos', amount);
   }
+}
+
+function applyRemoteAudioDrive(value: string) {
+  const state = useStore.getState();
+  if (!['mic', 'music', 'api', 'hybrid'].includes(value)) return;
+
+  const inputSource = (value === 'hybrid' ? 'api' : value) as VisualInputSource;
+  window.dispatchEvent(new CustomEvent('vj:select-input', { detail: inputSource }));
+  state.setAudioDriveMode(inputSource as AudioDriveMode);
 }
 
 function applyRemoteScene(scene: string) {

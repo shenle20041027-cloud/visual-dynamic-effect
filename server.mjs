@@ -8,7 +8,7 @@ import { WebSocketServer } from 'ws';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const port = 4302;
 const configuredBackendOrigin = String(process.env.VITE_SHOW_BACKEND_URL || process.env.SHOW_BACKEND_URL || '').replace(/\/$/, '');
-const lanHost = String(process.env.VITE_LAN_HOST || process.env.SHOW_LAN_HOST || '').trim();
+const lanHost = String(process.env.VITE_LAN_HOST || '').trim();
 
 function isLocalAddress(value) {
   return /(^|\/\/)localhost(?::|\/|$)|(^|\/\/)127\.0\.0\.1(?::|\/|$)|(^|\/\/)0\.0\.0\.0(?::|\/|$)/i.test(String(value || ''));

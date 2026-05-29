@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { SHOW_BACKEND_URL, SHOW_CONTROL_TOKEN, SHOW_WS_URL } from '@/lib/runtimeConfig';
+import { FIREBASE_DATABASE_URL, SHOW_BACKEND_URL, SHOW_CONTROL_TOKEN, SHOW_ID, SHOW_TRANSPORT, SHOW_WS_URL } from '@/lib/runtimeConfig';
 import { setRemoteAudioEnabled, setRemoteAudioSnapshot, type AudioDriveSnapshot } from '@/lib/audioDrive';
 
 const API_ENDPOINT = `${SHOW_BACKEND_URL}/api/audio-summary`;
@@ -8,6 +8,8 @@ const FALLBACK_STALE_MS = 250;
 
 const wsUrl = SHOW_WS_URL;
 const controlToken = SHOW_CONTROL_TOKEN;
+const databaseUrl = FIREBASE_DATABASE_URL;
+const showId = SHOW_ID;
 
 export function useApiAudioSource(enabled: boolean) {
   const intervalRef = useRef<number | null>(null);
@@ -45,36 +47,11 @@ export function useApiAudioSource(enabled: boolean) {
       }
 
       try {
-        const response = await fetch(API_ENDPOINT, { headers: { 'x-control-token': controlToken } });
-        if (!response.ok) {
-          console.warn(`API responded with ${response.status}`);
-          return;
-        }
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          console.warn(`API responded with ${contentType || 'non-json content'}`);
-          return;
-        }
-        const data = await response.json();
-        
-        // Transform API response to AudioDriveSnapshot
-        const snapshot: Partial<AudioDriveSnapshot> = {
-          volume: normalizeValue(data.volume),
-          subBass: normalizeValue(data.subBass),
-          bass: normalizeValue(data.bass),
-          lowMid: normalizeValue(data.lowMid),
-          mid: normalizeValue(data.mid),
-          highMid: normalizeValue(data.highMid),
-          treble: normalizeValue(data.treble),
-          energy: normalizeValue(data.energy),
-          beat: normalizeValue(data.beat),
-          spectralCentroid: normalizeValue(data.spectralCentroid),
-          spectralFlux: normalizeValue(data.spectralFlux),
-          transient: normalizeValue(data.transient),
-          dynamicRange: normalizeValue(data.dynamicRange),
-        };
+        const data = shouldReadFirebaseAudio() ? await fetchFirebaseAudioState() : await fetchBackendAudioSummary();
+        const frame = parseMixerAudioFrame(data);
+        if (!frame) return;
 
-        setRemoteAudioSnapshot(snapshot, data.syncedSignal ?? 0);
+        setRemoteAudioSnapshot(frame.snapshot, frame.syncedSignal);
         lastUpdateAtRef.current = now;
       } catch (error) {
         console.warn('Failed to fetch audio data from API:', error);
@@ -149,6 +126,44 @@ export function useApiAudioSource(enabled: boolean) {
       setRemoteAudioEnabled(false);
     };
   }, [enabled]);
+}
+
+async function fetchBackendAudioSummary() {
+  const response = await fetch(API_ENDPOINT, { headers: { 'x-control-token': controlToken } });
+  if (!response.ok) throw new Error(`API responded with ${response.status}`);
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) throw new Error(`API responded with ${contentType || 'non-json content'}`);
+  return response.json();
+}
+
+async function fetchFirebaseAudioState() {
+  const audio = await fetchFirebaseJson(`shows/${safePath(showId)}/state/modules/audio`);
+  const activeSourceId = isRecord(audio) && typeof audio.activeSourceId === 'string' ? audio.activeSourceId : '';
+  if (!activeSourceId) return audio;
+  const activeSource = await fetchFirebaseJson(`shows/${safePath(showId)}/state/audioSources/${safePath(activeSourceId)}`);
+  return activeSource || audio;
+}
+
+async function fetchFirebaseJson(path: string) {
+  const response = await fetch(firebaseJsonUrl(path));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Firebase ${path} failed: ${response.status}`);
+  return response.json();
+}
+
+function shouldReadFirebaseAudio() {
+  if (!databaseUrl) return false;
+  if (SHOW_TRANSPORT === 'firebase') return true;
+  if (SHOW_TRANSPORT === 'websocket' || SHOW_TRANSPORT === 'cloudflare') return !isUsableWebSocketUrl(wsUrl);
+  return !isUsableWebSocketUrl(wsUrl);
+}
+
+function firebaseJsonUrl(path: string) {
+  return `${databaseUrl}/${path}.json`;
+}
+
+function safePath(value: string) {
+  return value.replace(/[.#$/[\]]/g, '-');
 }
 
 function isUsableWebSocketUrl(value: string) {

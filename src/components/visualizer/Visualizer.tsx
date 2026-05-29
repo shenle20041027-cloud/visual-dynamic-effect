@@ -279,7 +279,7 @@ function AudioMutationOverlay({ sceneOverride }: { sceneOverride?: string }) {
   });
   const { baseColor, secondaryColor, accentColor, bgColor, currentScene } = useStore();
   const scene = sceneOverride || currentScene;
-  const disabled = scene === 'Void' || scene === 'Topology';
+  const disabled = scene === 'Void' || scene === 'Topology' || scene === 'Pulse';
 
   useFrame((state) => {
     if (disabled || !matRef.current) return;
@@ -2148,8 +2148,8 @@ const pulseFragment = `
     vec3 gold = vec3(1.0, 0.66, 0.28);
     vec3 red = vec3(1.0, 0.02, 0.0);
     vec3 hotRed = vec3(1.0, 0.0, 0.0);
-    vec3 silver = vec3(0.78, 0.9, 0.92);
-    vec3 white = vec3(1.0);
+    vec3 ember = vec3(1.0, 0.20, 0.08);
+    vec3 warmGlint = vec3(1.0, 0.46, 0.16);
 
     vec3 col = vec3(0.0);
     col += amber * aura * (0.18 + uEnergy * 0.08);
@@ -2189,11 +2189,11 @@ const pulseFragment = `
     float metalMask = clamp(metal, 0.0, 1.0);
     float bevel = smoothstep(0.2, 0.96, fbm(p * 14.0 + uTime * 0.25));
     col += red * metalMask * (0.42 + uBeat * 0.22);
-    col += mix(silver * 0.5, white * 0.74, bevel) * metalMask * (0.42 + uTreble * 0.16);
+    col += mix(ember * 0.42, warmGlint * 0.7, bevel) * metalMask * (0.34 + uTreble * 0.12);
     col += red * smoothstep(0.0, 0.7, metal) * 0.18;
 
     float flash = uBeat * step(0.72, hash(vec2(floor(uTime * 14.0), 91.0)));
-    col += white * flash * aura * 0.04;
+    col += warmGlint * flash * aura * 0.035;
     col += red * flash * edge * 0.22;
 
     float grain = hash(vUv * vec2(760.0, 430.0) + floor(uTime * 28.0)) - 0.5;

@@ -19,6 +19,14 @@ export interface AudioDriveSnapshot {
 }
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const FRAME_MS = 1000 / 60;
+
+const snapshotCache = new Map<AudioDriveMode, { frame: number; snapshot: AudioDriveSnapshot }>();
+const getFrameIndex = () => {
+  const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+  return Math.floor(now / FRAME_MS);
+};
+const clearSnapshotCache = () => snapshotCache.clear();
 
 let musicProjectSnapshot: AudioDriveSnapshot = {
   volume: 0,
@@ -58,6 +66,7 @@ let remoteAudioSnapshot: AudioDriveSnapshot = {
 };
 
 export function setMusicProjectSnapshot(next: Partial<AudioDriveSnapshot>) {
+  clearSnapshotCache();
   musicProjectLastUpdate = typeof performance === 'undefined' ? Date.now() : performance.now();
   musicProjectSnapshot = {
     ...musicProjectSnapshot,
@@ -66,6 +75,7 @@ export function setMusicProjectSnapshot(next: Partial<AudioDriveSnapshot>) {
 }
 
 export function setRemoteAudioEnabled(enabled: boolean) {
+  clearSnapshotCache();
   remoteAudioEnabled = enabled;
   const now = typeof performance === 'undefined' ? Date.now() : performance.now();
   remoteAudioLastUpdate = now;
@@ -76,6 +86,7 @@ export function setRemoteAudioEnabled(enabled: boolean) {
 }
 
 export function setRemoteAudioSnapshot(next: Partial<AudioDriveSnapshot>, syncedSignal = 0) {
+  clearSnapshotCache();
   const now = typeof performance === 'undefined' ? Date.now() : performance.now();
   remoteAudioLastUpdate = now;
   const screenImpact = clamp01((syncedSignal - 0.22) * 1.35);
@@ -152,8 +163,16 @@ const withLiveIdleFloor = (snapshot: AudioDriveSnapshot, mode: AudioDriveMode): 
 };
 
 export function getAudioDriveSnapshot(mode: AudioDriveMode): AudioDriveSnapshot {
+  const frame = getFrameIndex();
+  const cached = snapshotCache.get(mode);
+  if (cached?.frame === frame) return cached.snapshot;
+
+  let snapshot: AudioDriveSnapshot;
+
   if (mode === 'mic' || mode === 'music' || mode === 'api') {
-    return withLiveIdleFloor({ ...audioEngine.current }, mode);
+    snapshot = withLiveIdleFloor({ ...audioEngine.current }, mode);
+    snapshotCache.set(mode, { frame, snapshot });
+    return snapshot;
   }
 
   const time = typeof performance === 'undefined' ? Date.now() * 0.001 : performance.now() * 0.001;
@@ -162,7 +181,7 @@ export function getAudioDriveSnapshot(mode: AudioDriveMode): AudioDriveSnapshot 
   const fastPulse = pulse(time, 9.5);
 
   if (mode === 'low') {
-    return {
+    snapshot = {
       volume: 0.35 + slowPulse * 0.55,
       subBass: 0.55 + slowPulse * 0.45,
       bass: 0.5 + slowPulse * 0.45,
@@ -177,10 +196,12 @@ export function getAudioDriveSnapshot(mode: AudioDriveMode): AudioDriveSnapshot 
       transient: slowPulse > 0.88 ? 0.72 : 0.06,
       dynamicRange: 0.62 + slowPulse * 0.18,
     };
+    snapshotCache.set(mode, { frame, snapshot });
+    return snapshot;
   }
 
   if (mode === 'mid') {
-    return {
+    snapshot = {
       volume: 0.3 + mediumPulse * 0.42,
       subBass: 0.04,
       bass: 0.1 + mediumPulse * 0.08,
@@ -195,9 +216,11 @@ export function getAudioDriveSnapshot(mode: AudioDriveMode): AudioDriveSnapshot 
       transient: mediumPulse > 0.88 ? 0.58 : 0.08,
       dynamicRange: 0.42 + mediumPulse * 0.22,
     };
+    snapshotCache.set(mode, { frame, snapshot });
+    return snapshot;
   }
 
-  return {
+  snapshot = {
     volume: 0.24 + fastPulse * 0.34,
     subBass: 0.02,
     bass: 0.04,
@@ -212,4 +235,6 @@ export function getAudioDriveSnapshot(mode: AudioDriveMode): AudioDriveSnapshot 
     transient: fastPulse > 0.82 ? 0.72 : fastPulse * 0.32,
     dynamicRange: 0.28 + fastPulse * 0.34,
   };
+  snapshotCache.set(mode, { frame, snapshot });
+  return snapshot;
 }

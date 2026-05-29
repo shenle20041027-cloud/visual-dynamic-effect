@@ -388,14 +388,15 @@ export class AudioEngine {
     let peakFrequencyBin = 0;
     let peakFrequencyValue = 0;
     let frequencyDeltaSum = 0;
+    const needsDebugFrequency = this.activeSourceType === 'mic';
 
     for (let i = 0; i < length; i++) {
       let val = data[i];
-      if (val > peakFrequencyValue) {
+      if (needsDebugFrequency && val > peakFrequencyValue) {
         peakFrequencyValue = val;
         peakFrequencyBin = i;
       }
-      if (this.previousFrequencyFrame) {
+      if (needsDebugFrequency && this.previousFrequencyFrame) {
         frequencyDeltaSum += Math.abs(data[i] - this.previousFrequencyFrame[i]);
       }
       if (val < noiseGate) val = 0;
@@ -411,8 +412,13 @@ export class AudioEngine {
       else if (i >= 93 && i < 280) hmSum += val;
       else if (i >= 280) tSum += val;
     }
-    this.previousFrequencyFrame = new Uint8Array(data);
-    const frequencyDelta = frequencyDeltaSum / length / 255;
+    if (needsDebugFrequency) {
+      if (!this.previousFrequencyFrame || this.previousFrequencyFrame.length !== length) {
+        this.previousFrequencyFrame = new Uint8Array(length);
+      }
+      this.previousFrequencyFrame.set(data);
+    }
+    const frequencyDelta = needsDebugFrequency ? frequencyDeltaSum / length / 255 : 0;
 
     const subSense = config?.subBassSense ?? 1.0;
     const bassSense = config?.bassSense ?? 1.0;

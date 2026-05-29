@@ -20,6 +20,20 @@ import { useApiAudioSource } from '@/lib/useApiAudioSource';
 import type { VisualInputSource } from '@/store/useStore';
 import type { AudioDebugSnapshot } from '@/lib/AudioEngine';
 
+const audioDebugChanged = (a: AudioDebugSnapshot, b: AudioDebugSnapshot) => (
+  a.status !== b.status ||
+  a.message !== b.message ||
+  a.contextState !== b.contextState ||
+  a.streamActive !== b.streamActive ||
+  a.sourceType !== b.sourceType ||
+  Math.abs(a.rawRms - b.rawRms) > 0.006 ||
+  Math.abs(a.rawVolume - b.rawVolume) > 0.006 ||
+  Math.abs(a.frequencyDelta - b.frequencyDelta) > 0.004 ||
+  a.frequencyChanged !== b.frequencyChanged ||
+  a.peakFrequencyBin !== b.peakFrequencyBin ||
+  a.sampleRate !== b.sampleRate
+);
+
 export default function App() {
   const screenMatch = window.location.pathname.match(/^\/screen\/([^/]+)/);
 
@@ -58,6 +72,7 @@ function ControllerApp() {
   } = useStore();
   const [initError, setInitError] = useState('');
   const [audioDebug, setAudioDebug] = useState<AudioDebugSnapshot>(() => audioEngine.getDebugSnapshot());
+  const audioDebugRef = useRef(audioDebug);
   const lastAudioDebugUpdateRef = useRef(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
@@ -90,7 +105,11 @@ function ControllerApp() {
       const now = performance.now();
       if (now - lastAudioDebugUpdateRef.current > 120) {
         lastAudioDebugUpdateRef.current = now;
-        setAudioDebug(audioEngine.getDebugSnapshot());
+        const nextDebug = audioEngine.getDebugSnapshot();
+        if (audioDebugChanged(audioDebugRef.current, nextDebug)) {
+          audioDebugRef.current = nextDebug;
+          setAudioDebug(nextDebug);
+        }
       }
 
       animationFrameId = requestAnimationFrame(renderLoop);
@@ -181,24 +200,32 @@ function ControllerApp() {
     setVisualInputSource('mic');
     setAudioReady(false);
     setInitError('');
-    setAudioDebug({ ...audioEngine.getDebugSnapshot(), status: 'requesting', message: 'Waiting for microphone permission.' });
+    const requestingDebug = { ...audioEngine.getDebugSnapshot(), status: 'requesting' as const, message: 'Waiting for microphone permission.' };
+    audioDebugRef.current = requestingDebug;
+    setAudioDebug(requestingDebug);
     try {
       window.dispatchEvent(new Event('vj:stop-music'));
       await audioEngine.startMicrophone();
       setAudioReady(true);
       setInitError('');
-      setAudioDebug(audioEngine.getDebugSnapshot());
+      const nextDebug = audioEngine.getDebugSnapshot();
+      audioDebugRef.current = nextDebug;
+      setAudioDebug(nextDebug);
     } catch (err: any) {
       setAudioReady(false);
       setInitError(getReadableMicErrorMessage(err));
-      setAudioDebug(audioEngine.getDebugSnapshot());
+      const nextDebug = audioEngine.getDebugSnapshot();
+      audioDebugRef.current = nextDebug;
+      setAudioDebug(nextDebug);
     }
   };
 
   const deactivateMic = () => {
     audioEngine.stopCurrentAudioSource();
     setAudioReady(false);
-    setAudioDebug(audioEngine.getDebugSnapshot());
+    const nextDebug = audioEngine.getDebugSnapshot();
+    audioDebugRef.current = nextDebug;
+    setAudioDebug(nextDebug);
     if (visualInputSource === 'mic') setVisualInputSource('api');
   };
 
@@ -210,7 +237,9 @@ function ControllerApp() {
     audioEngine.stopCurrentAudioSource();
     setAudioReady(false);
     setInitError('');
-    setAudioDebug(audioEngine.getDebugSnapshot());
+    const nextDebug = audioEngine.getDebugSnapshot();
+    audioDebugRef.current = nextDebug;
+    setAudioDebug(nextDebug);
     if (source !== 'music') window.dispatchEvent(new Event('vj:stop-music'));
     setVisualInputSource(source);
   };
@@ -226,7 +255,9 @@ function ControllerApp() {
       audioEngine.stopCurrentAudioSource();
       setAudioReady(false);
       setInitError('');
-      setAudioDebug(audioEngine.getDebugSnapshot());
+      const nextDebug = audioEngine.getDebugSnapshot();
+      audioDebugRef.current = nextDebug;
+      setAudioDebug(nextDebug);
     };
 
     window.addEventListener('vj:select-input', handleSelectInput);

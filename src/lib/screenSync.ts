@@ -58,11 +58,19 @@ const getSyncUrl = () => {
   return `${protocol}//${window.location.host}/sync`;
 };
 
+const isLocalRuntime = () => ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
+
 export function useScreenSync(role: SyncRole, screenId?: string) {
   const [connected, setConnected] = useState(false);
   const [clientCount, setClientCount] = useState(0);
 
   useEffect(() => {
+    if (!isLocalRuntime()) {
+      setConnected(false);
+      setClientCount(0);
+      return;
+    }
+
     let socket: WebSocket | null = null;
     let unsubscribe: (() => void) | undefined;
     let reconnectTimer = 0;

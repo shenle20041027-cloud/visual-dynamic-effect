@@ -1,4 +1,4 @@
-import { SHOW_BACKEND_URL } from '@/lib/runtimeConfig';
+import { SHOW_BACKEND_URL, SHOW_CONTROL_TOKEN } from '@/lib/runtimeConfig';
 
 export type ScreenOwner = 'vj' | 'baofa' | 'off' | 'diagnostic';
 
@@ -17,8 +17,7 @@ export type ScreenPresentation = {
   showMenu: boolean;
 };
 
-const env = (import.meta as any).env || {};
-const controlToken = String(env.VITE_CONTROL_TOKEN || '');
+const controlToken = SHOW_CONTROL_TOKEN;
 export const BAOFA_SCREEN_BASE_URL = 'http://localhost:4303/screen';
 
 export const SHOW_SCREEN_IDS = [
@@ -34,10 +33,13 @@ export async function fetchScreenState(signal?: AbortSignal): Promise<{
   routes: Record<string, ScreenRoute>;
   presentation: ScreenPresentation;
 }> {
+  if (!controlToken.trim()) throw new Error('Control token is required');
   const headers: Record<string, string> = {};
   if (controlToken) headers['x-control-token'] = controlToken;
   const response = await fetch(`${SHOW_BACKEND_URL}/api/state`, { headers, signal });
   if (!response.ok) throw new Error(`Show API state failed: ${response.status}`);
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) throw new Error(`Show API state returned ${contentType || 'non-json content'}`);
   const state = await response.json();
   const presentation = state?.modules?.interaction?.screenPresentation || {};
   return {

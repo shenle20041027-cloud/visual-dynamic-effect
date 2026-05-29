@@ -1,14 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { SHOW_BACKEND_URL, SHOW_WS_URL } from '@/lib/runtimeConfig';
+import { SHOW_BACKEND_URL, SHOW_CONTROL_TOKEN, SHOW_WS_URL } from '@/lib/runtimeConfig';
 import { setRemoteAudioEnabled, setRemoteAudioSnapshot, type AudioDriveSnapshot } from '@/lib/audioDrive';
 
-const API_ENDPOINT = '/api/audio-summary';
+const API_ENDPOINT = `${SHOW_BACKEND_URL}/api/audio-summary`;
 const FALLBACK_POLL_INTERVAL_MS = 500;
 const FALLBACK_STALE_MS = 250;
 
-const env = (import.meta as any).env || {};
-const backendUrl = SHOW_BACKEND_URL;
 const wsUrl = SHOW_WS_URL;
+const controlToken = SHOW_CONTROL_TOKEN;
 
 export function useApiAudioSource(enabled: boolean) {
   const intervalRef = useRef<number | null>(null);
@@ -20,7 +19,7 @@ export function useApiAudioSource(enabled: boolean) {
   useEffect(() => {
     let disposed = false;
 
-    if (!enabled) {
+    if (!enabled || !controlToken.trim()) {
       disposed = true;
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -46,9 +45,14 @@ export function useApiAudioSource(enabled: boolean) {
       }
 
       try {
-        const response = await fetch(API_ENDPOINT);
+        const response = await fetch(API_ENDPOINT, { headers: { 'x-control-token': controlToken } });
         if (!response.ok) {
           console.warn(`API responded with ${response.status}`);
+          return;
+        }
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          console.warn(`API responded with ${contentType || 'non-json content'}`);
           return;
         }
         const data = await response.json();
@@ -79,8 +83,9 @@ export function useApiAudioSource(enabled: boolean) {
 
     const connectAudioStream = () => {
       if (disposed) return;
+      if (!isUsableWebSocketUrl(wsUrl)) return;
 
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(`${wsUrl}${wsUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(controlToken)}`);
       socketRef.current = socket;
 
       socket.addEventListener('open', () => {
@@ -89,6 +94,7 @@ export function useApiAudioSource(enabled: boolean) {
           clientId: clientIdRef.current,
           module: 'visual',
           role: 'audio-drive',
+          token: controlToken,
           capabilities: ['mixer.audioFrame', 'audio.drive'],
         }));
       });
@@ -143,6 +149,18 @@ export function useApiAudioSource(enabled: boolean) {
       setRemoteAudioEnabled(false);
     };
   }, [enabled]);
+}
+
+function isUsableWebSocketUrl(value: string) {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    if (!['ws:', 'wss:'].includes(url.protocol)) return false;
+    if (window.location.protocol === 'https:' && url.protocol !== 'wss:') return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function createIdFragment() {

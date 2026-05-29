@@ -15,6 +15,7 @@ export function useApiAudioSource(enabled: boolean) {
   const reconnectRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const lastUpdateAtRef = useRef<number>(0);
+  const clientIdRef = useRef(`vj-audio-drive-${createIdFragment()}`);
 
   useEffect(() => {
     let disposed = false;
@@ -82,6 +83,16 @@ export function useApiAudioSource(enabled: boolean) {
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
+      socket.addEventListener('open', () => {
+        socket.send(JSON.stringify({
+          type: 'client.hello',
+          clientId: clientIdRef.current,
+          module: 'visual',
+          role: 'audio-drive',
+          capabilities: ['mixer.audioFrame', 'audio.drive'],
+        }));
+      });
+
       socket.addEventListener('message', (event) => {
         const parsed = parseWebSocketPayload(event.data);
         if (!parsed) return;
@@ -132,6 +143,11 @@ export function useApiAudioSource(enabled: boolean) {
       setRemoteAudioEnabled(false);
     };
   }, [enabled]);
+}
+
+function createIdFragment() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return uuid ? uuid.slice(0, 8) : Math.random().toString(36).slice(2, 10);
 }
 
 /**

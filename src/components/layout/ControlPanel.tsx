@@ -6,6 +6,18 @@ import { getAudioDriveSnapshot } from '@/lib/audioDrive';
 import { audioEngine } from '@/lib/AudioEngine';
 import type { AudioDebugSnapshot } from '@/lib/AudioEngine';
 
+const audioDebugChanged = (a: AudioDebugSnapshot, b: AudioDebugSnapshot) => (
+  a.status !== b.status ||
+  a.contextState !== b.contextState ||
+  a.streamActive !== b.streamActive ||
+  a.sourceType !== b.sourceType ||
+  Math.abs(a.rawRms - b.rawRms) > 0.008 ||
+  Math.abs(a.rawVolume - b.rawVolume) > 0.008 ||
+  Math.abs(a.frequencyDelta - b.frequencyDelta) > 0.004 ||
+  a.frequencyChanged !== b.frequencyChanged ||
+  a.peakFrequencyBin !== b.peakFrequencyBin
+);
+
 const Toggle = ({ label, active, onToggle }: any) => (
   <div className="flex justify-between items-center gap-4">
     <span className="text-[10px] uppercase font-bold text-white/45 tracking-widest leading-tight">{label}</span>
@@ -54,6 +66,8 @@ export function ControlPanel() {
   const [isDragging, setIsDragging] = useState(false);
   const [micLevels, setMicLevels] = useState({ volume: 0, bass: 0, beat: 0 });
   const [audioDebug, setAudioDebug] = useState<AudioDebugSnapshot>(() => audioEngine.getDebugSnapshot());
+  const micLevelsRef = useRef(micLevels);
+  const audioDebugRef = useRef(audioDebug);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -97,12 +111,24 @@ export function ControlPanel() {
       if (now - lastUpdate >= 100) {
         lastUpdate = now;
         const { volume, bass, subBass, mid, highMid, treble, beat } = getAudioDriveSnapshot(audioDriveMode);
-        setMicLevels({
+        const nextLevels = {
           volume: Math.min(1, volume * 2.5),
           bass: Math.min(1, Math.max(bass, subBass, mid, highMid, treble) * 2.2),
           beat: Math.min(1, beat),
-        });
-        setAudioDebug(audioEngine.getDebugSnapshot());
+        };
+        if (
+          Math.abs(nextLevels.volume - micLevelsRef.current.volume) > 0.015 ||
+          Math.abs(nextLevels.bass - micLevelsRef.current.bass) > 0.015 ||
+          Math.abs(nextLevels.beat - micLevelsRef.current.beat) > 0.015
+        ) {
+          micLevelsRef.current = nextLevels;
+          setMicLevels(nextLevels);
+        }
+        const nextDebug = audioEngine.getDebugSnapshot();
+        if (audioDebugChanged(audioDebugRef.current, nextDebug)) {
+          audioDebugRef.current = nextDebug;
+          setAudioDebug(nextDebug);
+        }
       }
       animationFrameId = requestAnimationFrame(updateMicLevels);
     };

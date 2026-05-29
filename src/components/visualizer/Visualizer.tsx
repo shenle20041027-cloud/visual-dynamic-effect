@@ -9,13 +9,28 @@ import { useStore } from '@/store/useStore';
 import { BlueFontScene } from './BlueFontScene';
 import { PurpleScene } from './PurpleScene';
 
+const REACTIVE_AUDIO_FRAME_MS = 1000 / 60;
+let reactiveAudioCache:
+  | { frame: number; mode: string; autoVjEnabled: boolean; snapshot: ReturnType<typeof getAudioDriveSnapshot> }
+  | null = null;
+
 function getReactiveAudio() {
   const { audioDriveMode, autoVjEnabled } = useStore.getState();
+  const frame = Math.floor((typeof performance === 'undefined' ? Date.now() : performance.now()) / REACTIVE_AUDIO_FRAME_MS);
+  if (
+    reactiveAudioCache &&
+    reactiveAudioCache.frame === frame &&
+    reactiveAudioCache.mode === audioDriveMode &&
+    reactiveAudioCache.autoVjEnabled === autoVjEnabled
+  ) {
+    return reactiveAudioCache.snapshot;
+  }
+
   const audio = getAudioDriveSnapshot(audioDriveMode);
   const motionAmount = autoVjEnabled ? 0.9 : 0;
   const beatAmount = autoVjEnabled ? 0.75 : 0;
 
-  return {
+  const snapshot = {
     ...audio,
     volume: audio.volume * motionAmount,
     subBass: audio.subBass * motionAmount,
@@ -31,6 +46,8 @@ function getReactiveAudio() {
     transient: audio.transient * motionAmount,
     dynamicRange: audio.dynamicRange * motionAmount,
   };
+  reactiveAudioCache = { frame, mode: audioDriveMode, autoVjEnabled, snapshot };
+  return snapshot;
 }
 
 const audioMutationFragment = `
@@ -2966,10 +2983,11 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
   const [dynamicGlitch, setDynamicGlitch] = useState(false);
   const lastUpdateRef = useRef(0);
   const dynamicRef = useRef({ bloom: bloomIntensity, split: rgbSplitAmount, distortion, glitch: false });
+  const renderedRef = useRef({ bloom: bloomIntensity, split: rgbSplitAmount, distortion, glitch: false });
 
   useFrame((state) => {
     const now = state.clock.elapsedTime;
-    if (now - lastUpdateRef.current < 1 / (reduced ? 18 : 30)) return;
+    if (now - lastUpdateRef.current < 1 / (reduced ? 12 : 20)) return;
     lastUpdateRef.current = now;
 
     const { energy, beat, bass, subBass, mid, treble, highMid, spectralFlux, transient, spectralCentroid, dynamicRange } = getAudioDriveSnapshot(audioDriveMode);
@@ -3001,10 +3019,22 @@ function PostProcessing({ reduced = false }: { reduced?: boolean }) {
       glitch: reduced ? false : targetGlitch,
     };
 
-    setDynamicBloom(next.bloom);
-    setDynamicSplit(next.split);
-    setDynamicDistortion(next.distortion);
-    if (next.glitch !== dynamicRef.current.glitch) setDynamicGlitch(next.glitch);
+    if (Math.abs(next.bloom - renderedRef.current.bloom) > 0.012) {
+      renderedRef.current.bloom = next.bloom;
+      setDynamicBloom(next.bloom);
+    }
+    if (Math.abs(next.split - renderedRef.current.split) > 0.00012) {
+      renderedRef.current.split = next.split;
+      setDynamicSplit(next.split);
+    }
+    if (Math.abs(next.distortion - renderedRef.current.distortion) > 0.003) {
+      renderedRef.current.distortion = next.distortion;
+      setDynamicDistortion(next.distortion);
+    }
+    if (next.glitch !== renderedRef.current.glitch) {
+      renderedRef.current.glitch = next.glitch;
+      setDynamicGlitch(next.glitch);
+    }
     dynamicRef.current = next;
   });
 
@@ -3465,6 +3495,10 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
     ? (outputMode === 'mirror' ? currentScene : activeScreen?.scene)
     : currentScene;
   const displaySignal = syncedScreenSignal;
+  const canvasDpr = useMemo<[number, number]>(() => {
+    const pixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+    return isScreenOutput ? [0.7, Math.min(1, pixelRatio)] : [0.9, Math.min(1.5, Math.max(1, pixelRatio))];
+  }, [isScreenOutput, viewportKey]);
   const deviceAspectClass = activeScreen?.device === 'phone'
     ? 'inset-x-[36%] inset-y-[8%]'
     : activeScreen?.device === 'tablet'
@@ -3474,10 +3508,18 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
         : 'inset-4';
 
   useEffect(() => {
-    const resize = () => setViewportKey((key) => key + 1);
+    let resizeFrame = 0;
+    const resize = () => {
+      if (resizeFrame) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+        setViewportKey((key) => key + 1);
+      });
+    };
     window.addEventListener('resize', resize);
     window.addEventListener('orientationchange', resize);
     return () => {
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
       window.removeEventListener('resize', resize);
       window.removeEventListener('orientationchange', resize);
     };
@@ -3486,6 +3528,7 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
   useEffect(() => {
     let frame = 0;
     let lastUpdate = 0;
+    let lastFilter = '';
     const updateFilter = () => {
       const now = performance.now();
       if (containerRef.current && now - lastUpdate >= 50) {
@@ -3501,7 +3544,11 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
           audioSaturation = Math.min(0.16, treble * 0.07 + energy * 0.034 + spectralCentroid * 0.044);
         }
 
-        containerRef.current.style.filter = `contrast(${contrast + audioContrast}) brightness(${brightness + audioBrightness}) saturate(${saturation + audioSaturation})`;
+        const nextFilter = `contrast(${(contrast + audioContrast).toFixed(4)}) brightness(${(brightness + audioBrightness).toFixed(4)}) saturate(${(saturation + audioSaturation).toFixed(4)})`;
+        if (nextFilter !== lastFilter) {
+          lastFilter = nextFilter;
+          containerRef.current.style.filter = nextFilter;
+        }
       }
       frame = requestAnimationFrame(updateFilter);
     };
@@ -3526,7 +3573,7 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
           className="screen-canvas !absolute !inset-0 !h-full !w-full"
           style={{ width: '100%', height: '100%' }}
           camera={{ position: [0, 0, 5], fov: 60 }}
-          dpr={isScreenOutput ? [0.75, 1] : [1, 2]}
+          dpr={canvasDpr}
           gl={{ antialias: !isScreenOutput, alpha: false, powerPreference: 'high-performance' }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;

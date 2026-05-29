@@ -37,6 +37,7 @@ export const screenText = {
       Cyber: 'Cyber',
       Pulse: 'Neon Pulse',
       Void: 'Dark Space',
+      Purple: 'Purple',
     },
   },
   ZH: {
@@ -75,6 +76,7 @@ export const screenText = {
       Cyber: '赛博',
       Pulse: '霓虹脉冲',
       Void: '暗空间',
+      Purple: 'Purple',
     },
   },
 };

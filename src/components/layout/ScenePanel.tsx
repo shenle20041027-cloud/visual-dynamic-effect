@@ -10,6 +10,7 @@ const scenesConfig = [
   { id: 'Cyber' },
   { id: 'Topology' },
   { id: 'Pulse' },
+  { id: 'Purple' },
 ];
 
 export function ScenePanel() {

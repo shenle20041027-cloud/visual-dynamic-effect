@@ -1,4 +1,4 @@
-import { SHOW_BACKEND_URL, SHOW_WS_URL } from '@/lib/runtimeConfig';
+import { FIREBASE_DATABASE_URL, SHOW_BACKEND_URL, SHOW_CONTROL_TOKEN, SHOW_ID, SHOW_TRANSPORT, SHOW_WS_URL } from '@/lib/runtimeConfig';
 
 export type ModuleName = 'audio' | 'visual' | 'interaction';
 
@@ -33,13 +33,12 @@ type ClientOptions = {
   onError?: (message: string) => void;
 };
 
-const env = (import.meta as any).env || {};
 const backendUrl = SHOW_BACKEND_URL;
 const wsUrl = SHOW_WS_URL;
-const controlToken = env.VITE_CONTROL_TOKEN || '';
-const databaseUrl = String(env.VITE_FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-const showId = env.VITE_SHOW_ID || 'show-main';
-const transport = env.VITE_SHOW_TRANSPORT || 'auto';
+const controlToken = SHOW_CONTROL_TOKEN;
+const databaseUrl = FIREBASE_DATABASE_URL;
+const showId = SHOW_ID;
+const transport = SHOW_TRANSPORT;
 
 export function createShowControlClient(options: ClientOptions) {
   if (shouldUseFirebase()) return createFirebaseClient(options);

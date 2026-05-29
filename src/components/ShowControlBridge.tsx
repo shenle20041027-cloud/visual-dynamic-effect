@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { createShowControlClient, type ControlCommand } from '@/lib/showControlClient';
+import { ShowRuntimeSettingsPanel } from '@/components/ShowRuntimeSettingsPanel';
 import type { AudioDriveMode } from '@/lib/audioDrive';
 import type { VisualInputSource } from '@/store/useStore';
 
@@ -122,9 +123,12 @@ export function ShowControlBridge({ showStatus = true }: { showStatus?: boolean 
   if (!showStatus) return null;
 
   return (
-    <div className="pointer-events-none fixed left-3 bottom-3 z-30 hidden rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/60 backdrop-blur md:block">
-      Show API: {status}
-    </div>
+    <>
+      <div className="pointer-events-none fixed left-3 bottom-3 z-30 hidden rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/60 backdrop-blur md:block">
+        Show API: {status}
+      </div>
+      <ShowRuntimeSettingsPanel status={status} />
+    </>
   );
 }
 

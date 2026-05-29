@@ -25,7 +25,7 @@ export function PresetPanel() {
       </div>
       
       <div className="flex flex-col gap-3">
-        {presets.map((preset) => {
+        {presets.map((preset, index) => {
           const isActive = currentScene === preset.scene;
           return (
             <button
@@ -40,7 +40,7 @@ export function PresetPanel() {
             >
               <span className={`text-[13px] font-bold tracking-wide ${
                  isActive ? 'text-black' : 'text-[#ffffff]'
-              }`}>{preset.name}</span>
+              }`}>{index + 1}. {preset.name}</span>
               <span className={`text-[11px] mt-1.5 text-left ${
                  isActive ? 'text-[#666666]' : 'text-[#666666]'
               }`}>{preset.desc}</span>

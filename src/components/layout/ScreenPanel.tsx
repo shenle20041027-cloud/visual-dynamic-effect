@@ -12,7 +12,7 @@ const deviceIcon: Record<OutputDeviceType, typeof Monitor> = {
   phone: Smartphone,
 };
 
-const scenes = ['Dumbar', 'Topology', 'Liquid', 'Chromaflux', 'Blue Font', 'Cyber', 'Pulse', 'Void'];
+const scenes = ['Dumbar', 'Topology', 'Liquid', 'Chromaflux', 'Blue Font', 'Cyber', 'Pulse', 'Void', 'Purple'];
 const outputModes: OutputMode[] = ['mirror', 'solo', 'split'];
 const transitionStyles: ScreenTransitionStyle[] = ['crossfade', 'scan', 'strobe', 'cut'];
 

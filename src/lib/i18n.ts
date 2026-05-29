@@ -81,6 +81,8 @@ export const t = {
     PRESET_VOID_DESC: "Monochrome void",
     PRESET_PULSE: "Neon Pulse",
     PRESET_PULSE_DESC: "Aggressive pink bass",
+    PRESET_PURPLE: "Purple",
+    PRESET_PURPLE_DESC: "Liquid holographic purple stream",
     PRESET_TOPOLOGY: "Sonic Topology",
     PRESET_TOPOLOGY_DESC: "Liquified contour type",
 
@@ -96,7 +98,8 @@ export const t = {
       Calm: "CALM",
       Void: "DARK SPACE",
       Topology: "SONIC TOPOLOGY",
-      Pulse: "NEON PULSE"
+      Pulse: "NEON PULSE",
+      Purple: "PURPLE"
     },
 
     // Control Panel
@@ -255,6 +258,8 @@ export const t = {
     PRESET_VOID_DESC: "单色虚空与纯粹粒子",
     PRESET_PULSE: "霓虹脉冲 (Neon Pulse)",
     PRESET_PULSE_DESC: "激进发光的贝斯律动",
+    PRESET_PURPLE: "Purple",
+    PRESET_PURPLE_DESC: "紫色液态全息流",
     PRESET_TOPOLOGY: "声波拓扑",
     PRESET_TOPOLOGY_DESC: "液化等高线文字",
 
@@ -269,7 +274,8 @@ export const t = {
       Calm: "宁静",
       Void: "暗黑深空",
       Topology: "声波拓扑",
-      Pulse: "霓虹脉冲"
+      Pulse: "霓虹脉冲",
+      Purple: "Purple"
     },
 
     // Control Panel

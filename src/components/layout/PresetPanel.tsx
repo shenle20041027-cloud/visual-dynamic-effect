@@ -15,6 +15,7 @@ export function PresetPanel() {
     { id: 'Cyberpunk', name: strings.PRESET_CYBER || 'Cyberpunk', desc: strings.PRESET_CYBER_DESC || 'Neon blue, high glitch', scene: 'Cyber' },
     { id: 'Dark Space', name: strings.PRESET_VOID || 'Dark Space', desc: strings.PRESET_VOID_DESC || 'Monochrome void', scene: 'Void' },
     { id: 'Neon Pulse', name: strings.PRESET_PULSE || 'Neon Pulse', desc: strings.PRESET_PULSE_DESC || 'Aggressive pink bass', scene: 'Pulse' },
+    { id: 'Purple', name: strings.PRESET_PURPLE || 'Purple', desc: strings.PRESET_PURPLE_DESC || 'Liquid holographic purple stream', scene: 'Purple' },
   ];
 
   return (

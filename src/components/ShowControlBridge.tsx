@@ -18,6 +18,7 @@ const scenePresetMap: Record<string, string> = {
   'Blue Font': 'Blue Font',
   Topology: 'Sonic Topology',
   Pulse: 'Neon Pulse',
+  Purple: 'Purple',
   Void: 'Dark Space',
   Dumbar: 'Dumbar Base',
 };

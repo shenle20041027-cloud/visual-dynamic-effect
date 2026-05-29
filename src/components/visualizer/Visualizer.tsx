@@ -7,6 +7,7 @@ import { getAudioDriveSnapshot } from '@/lib/audioDrive';
 import { getOutputModeLabel, getTransitionLabel, screenText } from '@/lib/screenText';
 import { useStore } from '@/store/useStore';
 import { BlueFontScene } from './BlueFontScene';
+import { PurpleScene } from './PurpleScene';
 
 function getReactiveAudio() {
   const { audioDriveMode, autoVjEnabled } = useStore.getState();
@@ -2527,6 +2528,7 @@ function SceneRouter({ sceneOverride }: { sceneOverride?: string }) {
   const scene = sceneOverride || currentScene;
   switch(scene) {
     case 'Blue Font': return null;
+    case 'Purple': return null;
     case 'Cyber': return <CyberScene />;
     case 'Topology': return <TopologyScene />;
     case 'Liquid': return <LiquidScene />;
@@ -3516,6 +3518,8 @@ export function Visualizer({ screenIdOverride }: { screenIdOverride?: string } =
     >
       {sceneOverride === 'Blue Font' ? (
         <BlueFontScene />
+      ) : sceneOverride === 'Purple' ? (
+        <PurpleScene />
       ) : (
         <Canvas
           key={viewportKey}
